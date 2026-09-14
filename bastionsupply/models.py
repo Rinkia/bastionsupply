@@ -22,8 +22,15 @@ class Tool:
 
     @property
     def param_text(self) -> str:
-        """Flat text of every param name + description, for scanning."""
-        props = (self.input_schema or {}).get("properties", {})
+        """Flat text of every param name + description, for scanning.
+
+        Tolerant of malformed schemas from a hostile server: a non-dict
+        inputSchema or properties yields empty text, never a crash.
+        """
+        schema = self.input_schema if isinstance(self.input_schema, dict) else {}
+        props = schema.get("properties", {})
+        if not isinstance(props, dict):
+            return ""
         parts = []
         for pname, spec in props.items():
             parts.append(str(pname))

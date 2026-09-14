@@ -48,39 +48,54 @@ _SECRET_PARAM = re.compile(
     re.I,
 )
 
-# --- hidden unicode: ranges no legitimate tool text needs --------------------
-_INVISIBLE = {
-    "zero-width": lambda c: c in "​‌‍⁠﻿",
-    "bidi-override": lambda c: c in "‪‫‬‭‮⁦⁧⁨⁩",
-    "tag-chars": lambda c: 0xE0000 <= ord(c) <= 0xE007F,
-    "private-use": lambda c: 0xE000 <= ord(c) <= 0xF8FF,
-}
+# --- hidden unicode: format/control/private-use chars no tool text needs ------
+# Unicode general categories that don't belong in a tool name/description:
+#   Cf = format (zero-width, bidi overrides, tag chars), Cc = control,
+#   Co = private-use. Category-based catches far more than a hand-list.
+_ALLOWED_CONTROL = {"\t", "\n", "\r"}
+_HIDDEN_CATEGORY = {"Cf": "format", "Cc": "control", "Co": "private-use"}
 
 
 def _hidden_codepoints(text: str) -> list[tuple[str, str]]:
-    """Return (kind, U+XXXX) for every suspicious char in `text`."""
+    """Return (kind, U+XXXX) for every hidden/control/private-use char."""
     hits = []
     for ch in text:
-        for kind, pred in _INVISIBLE.items():
-            if pred(ch):
-                hits.append((kind, f"U+{ord(ch):04X}"))
-                break
+        if ch in _ALLOWED_CONTROL:
+            continue
+        kind = _HIDDEN_CATEGORY.get(unicodedata.category(ch))
+        if kind:
+            hits.append((kind, f"U+{ord(ch):04X}"))
     return hits
 
 
+def _scripts_in(text: str) -> set[str]:
+    """Alphabetic scripts present (LATIN, CYRILLIC, GREEK, ...), via char names."""
+    scripts = set()
+    for ch in text:
+        if not ch.isalpha():
+            continue
+        try:
+            scripts.add(unicodedata.name(ch).split(" ", 1)[0])
+        except ValueError:
+            continue  # unnamed char
+    return scripts
+
+
 def check_tool_poisoning(server: Server) -> list[Finding]:
+    """Instructions aimed at the model — in the description OR a parameter."""
     out = []
     for t in server.tools:
-        for rx in _POISON:
-            m = rx.search(t.description)
-            if m:
+        for field_name, text in (("description", t.description), ("parameter", t.param_text)):
+            hit = next((m for rx in _POISON if (m := rx.search(text))), None)
+            if hit:
+                where = "Tool description" if field_name == "description" else "Tool parameter"
                 out.append(
                     Finding(
                         check="tool-poisoning",
                         severity="critical",
                         tool=t.name,
-                        message="Tool description contains an instruction aimed at the model, not a description of the tool.",
-                        evidence=_snippet(t.description, m.start(), m.end()),
+                        message=f"{where} contains an instruction aimed at the model, not a description of the tool.",
+                        evidence=_snippet(text, hit.start(), hit.end()),
                     )
                 )
                 break  # one finding per tool is enough signal
@@ -148,7 +163,7 @@ def check_secret_solicitation(server: Server) -> list[Finding]:
 def check_hidden_unicode(server: Server) -> list[Finding]:
     out = []
     for t in server.tools:
-        for field_name, text in (("name", t.name), ("description", t.description)):
+        for field_name, text in (("name", t.name), ("description", t.description), ("parameters", t.param_text)):
             hits = _hidden_codepoints(text)
             if hits:
                 kinds = sorted({k for k, _ in hits})
@@ -165,9 +180,29 @@ def check_hidden_unicode(server: Server) -> list[Finding]:
     return out
 
 
+def check_homoglyph_name(server: Server) -> list[Finding]:
+    """A tool name mixing alphabetic scripts (e.g. Latin + Cyrillic) is a
+    homoglyph-spoofing signal — impersonating another tool by look-alike chars."""
+    out = []
+    for t in server.tools:
+        scripts = _scripts_in(t.name)
+        if len(scripts) > 1 and "LATIN" in scripts:
+            out.append(
+                Finding(
+                    check="homoglyph-name",
+                    severity="high",
+                    tool=t.name,
+                    message=f"Tool name mixes scripts ({', '.join(sorted(scripts))}); possible homoglyph spoofing.",
+                    evidence=t.name.encode("unicode_escape").decode("ascii"),
+                )
+            )
+    return out
+
+
 ALL_CHECKS = (
     check_tool_poisoning,
     check_hidden_unicode,
+    check_homoglyph_name,
     check_tool_shadowing,
     check_secret_solicitation,
     check_sensitive_capability,
@@ -191,8 +226,3 @@ def _snippet(text: str, start: int, end: int, pad: int = 30) -> str:
     # make invisible chars visible in evidence
     s = "".join(c if (c.isprintable() or c == " ") else f"\\u{ord(c):04x}" for c in s)
     return ("…" if a else "") + s + ("…" if b < len(text) else "")
-
-
-def normalize_confusables(text: str) -> str:
-    """NFKC fold — used by tests to show homoglyph names collapse."""
-    return unicodedata.normalize("NFKC", text)

@@ -1,9 +1,19 @@
+import io
 import json
 from pathlib import Path
 
-from bastionsupply import fetch, harden, lockfile
-from bastionsupply.models import Server, Tool
+from bastionsupply import fetch, harden, lockfile, report
+from bastionsupply.models import Finding, ScanReport, Server, Tool
 from bastionsupply.scanner import scan
+
+
+def test_unicode_tool_name_output_is_encodable_on_cp1252():
+    # a homoglyph name (Cyrillic) must render without crashing a legacy console
+    rep = ScanReport("s", 1, (Finding("homoglyph-name", "high", "gеt", "mixes scripts"),))
+    buf = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="backslashreplace")
+    buf.write(report.to_text(rep))  # must not raise UnicodeEncodeError
+    buf.write(report.to_json(rep))
+    buf.flush()
 
 EX = Path(__file__).resolve().parents[1] / "examples" / "malicious_server.json"
 

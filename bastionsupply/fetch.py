@@ -13,9 +13,13 @@ import json
 import os
 import shlex
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 from .models import Server, Tool
+
+MAX_LINE = 5_000_000  # cap one JSON-RPC message (bytes) — bound memory vs a hostile server
 
 
 # --------------------------------------------------------------------------- #
@@ -33,11 +37,14 @@ def tools_from_obj(obj) -> tuple[Tool, ...]:
     for row in obj:
         if not isinstance(row, dict) or "name" not in row:
             raise ValueError(f"bad tool row: {row!r}")
+        schema = row.get("inputSchema") or row.get("input_schema") or {}
+        if not isinstance(schema, dict):
+            schema = {}  # hostile/malformed server: don't carry a non-dict schema
         tools.append(
             Tool(
                 name=str(row["name"]),
                 description=str(row.get("description", "")),
-                input_schema=row.get("inputSchema") or row.get("input_schema") or {},
+                input_schema=schema,
             )
         )
     return tuple(tools)
@@ -101,14 +108,37 @@ def _notify(proc, method) -> None:
 
 
 def _read_result(proc, want_id, timeout):
-    """Read newline-delimited JSON-RPC until the reply with id==want_id."""
-    import time
+    """Read the reply with id==want_id, honoring `timeout` even if the server
+    hangs mid-line. The blocking read runs in a thread we abandon on timeout;
+    the caller's `finally` kills the process, which unblocks it.
+    """
+    box: dict = {}
 
+    def work():
+        try:
+            box["v"] = _read_loop(proc, want_id, timeout)
+        except BaseException as e:  # ferry any error back to the caller
+            box["e"] = e
+
+    th = threading.Thread(target=work, daemon=True)
+    th.start()
+    th.join(timeout + 1.0)
+    if th.is_alive():
+        raise TimeoutError(f"MCP server did not reply to id={want_id} within {timeout}s (hung)")
+    if "e" in box:
+        raise box["e"]
+    return box["v"]
+
+
+def _read_loop(proc, want_id, timeout):
+    """Read newline-delimited JSON-RPC until the reply with id==want_id."""
     deadline = time.time() + timeout
     while time.time() < deadline:
-        line = proc.stdout.readline()
+        line = proc.stdout.readline(MAX_LINE)
         if not line:
             raise RuntimeError("MCP server closed the connection before replying")
+        if len(line) >= MAX_LINE and not line.endswith("\n"):
+            raise RuntimeError("MCP server sent an oversized line (>5MB); aborting")
         line = line.strip()
         if not line:
             continue

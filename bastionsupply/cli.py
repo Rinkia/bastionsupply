@@ -52,7 +52,18 @@ def _add_target_flags(p) -> None:
     p.add_argument("--name", help="override server name label")
 
 
+def _make_output_unicode_safe() -> None:
+    # tool names/evidence can carry non-ASCII (that's the homoglyph attack we
+    # report); a cp1252 console must not crash printing them.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def main(argv=None) -> int:
+    _make_output_unicode_safe()
     ap = argparse.ArgumentParser(prog="bastionsupply", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
 

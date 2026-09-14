@@ -50,8 +50,9 @@ in CI to fail a build that pulls in a poisoned server.
 
 | check | severity | what it means |
 |-------|----------|---------------|
-| `tool-poisoning` | critical | tool description carries instructions aimed at the model, not a description of the tool |
-| `hidden-unicode` | critical | zero-width / bidi-override / tag chars hiding text in a name or description |
+| `tool-poisoning` | critical | instructions aimed at the model — in the tool **description or a parameter** |
+| `hidden-unicode` | critical | format / control / private-use chars (zero-width, bidi, tag) hiding in a name, description, **or parameter** |
+| `homoglyph-name` | high | tool name mixes scripts (e.g. Cyrillic + Latin) — look-alike impersonation of another tool |
 | `tool-shadowing` | high | a tool's description talks about *other* tools — hijacking their behavior |
 | `secret-solicitation` | high | a parameter asks the model to hand over an api_key / token / password |
 | `sensitive-capability` | high/med | tool exposes exec, delete, network, secret-read, or privilege escalation |
@@ -71,7 +72,9 @@ print("safe" if report.ok else "risky", report.risk)
 
 `--stdio` / `--config --live` **spawn the server process** to call
 `tools/list`. Only run them on servers you intend to execute. Offline
-`scan tools.json` never runs anything.
+`scan tools.json` never runs anything. Live fetch is bounded — a hostile server
+that hangs or streams a giant reply is cut off by the timeout and a per-message
+size cap, not left to hang or exhaust memory.
 
 HTTP/SSE transport isn't implemented yet — stdio covers the common
 locally-installed case.
