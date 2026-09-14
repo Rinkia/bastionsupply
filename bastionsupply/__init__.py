@@ -19,7 +19,7 @@ from .models import Finding, ScanReport, Server, Tool
 from .report import to_json, to_text
 from .scanner import scan
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __all__ = [
     "Tool",
     "Server",

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- Fix: homoglyph sibling-impersonation flagged **both** the look-alike and the
+  real ASCII tool it mimics. Now only the name that actually uses look-alike
+  characters is flagged; the pure-ASCII victim is left alone.
+
 ## 0.3.0
 
 - **Wired bastioncorpus** (now a dependency): tool-poisoning also matches known

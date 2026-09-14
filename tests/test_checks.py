@@ -85,6 +85,8 @@ def test_homoglyph_sibling_impersonation_is_critical():
     rep = scan(_srv(Tool("get_data", "real"), Tool("gеt_data", "fake")))
     f = next(f for f in rep.findings if f.check == "homoglyph-name" and f.tool == "gеt_data")
     assert f.severity == "critical" and "get_data" in f.message
+    # the pure-ASCII victim must NOT be flagged as an impersonator
+    assert not any(f.check == "homoglyph-name" and f.tool == "get_data" for f in rep.findings)
 
 
 def test_homoglyph_in_parameter_name():

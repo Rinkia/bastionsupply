@@ -231,7 +231,12 @@ def check_homoglyph_name(server: Server) -> list[Finding]:
     by_skel: dict[str, set[str]] = {}
     for t in server.tools:
         by_skel.setdefault(_skeleton(t.name), set()).add(t.name)
-    impersonators = {n for names in by_skel.values() if len(names) > 1 for n in names}
+    # in a colliding group, only names that actually USE look-alike chars are
+    # impersonators; a pure-ASCII name is the victim, not the attacker
+    impersonators = {
+        n for names in by_skel.values() if len(names) > 1
+        for n in names if _skeleton(n) != n.lower()
+    }
 
     for t in server.tools:
         if t.name in impersonators:
