@@ -67,7 +67,17 @@ def test_fetch_http_rejects_non_http_scheme():
         fetch.fetch_http("file:///etc/passwd")
 
 
-def test_first_sse_json_extracts_payload():
-    data = b"event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[]}}\n\n"
-    obj = fetch._first_sse_json(data)
-    assert obj["result"]["tools"] == []
+def test_sse_multi_event_picks_matching_id():
+    # two events; the tools/list reply (id=2) is the SECOND one
+    data = (
+        b"event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":99,\"result\":{\"other\":1}}\n\n"
+        b"event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[]}}\n\n"
+    )
+    msgs = fetch._sse_messages(data)
+    assert len(msgs) == 2
+    assert fetch._pick(msgs, want_id=2)["result"] == {"tools": []}
+
+
+def test_pick_handles_batch_array():
+    batch = [{"id": 1, "result": {}}, {"id": 2, "result": {"tools": [{"name": "a"}]}}]
+    assert fetch._pick(batch, want_id=2)["result"]["tools"][0]["name"] == "a"

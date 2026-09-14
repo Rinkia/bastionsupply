@@ -55,7 +55,8 @@ in CI to fail a build that pulls in a poisoned server.
 
 | check | severity | what it means |
 |-------|----------|---------------|
-| `tool-poisoning` | critical | instructions aimed at the model — in the tool **description or a parameter** |
+| `tool-poisoning` | critical | instructions aimed at the model — in the tool **description or a parameter**; matches regex heuristics **and** known bastioncorpus attack strings |
+| `semantic-poisoning` | high | tool text is embedding-similar to a known injection intent (optional; needs an embedder) |
 | `hidden-unicode` | critical | format / control / private-use chars (zero-width, bidi, tag) hiding in a name, description, **or parameter** |
 | `homoglyph-name` | critical/high | a tool (or parameter) name using look-alike chars — **critical** when it folds to the same skeleton as a sibling tool (active impersonation), **high** for a mixed-script name |
 | `tool-shadowing` | high | a tool's description talks about *other* tools — hijacking their behavior |
@@ -80,6 +81,25 @@ print("safe" if report.ok else "risky", report.risk)
 `scan tools.json` never runs anything. Live fetch is bounded — a hostile server
 that hangs or streams a giant reply is cut off by the timeout and a per-message
 size cap, not left to hang or exhaust memory. `--http` speaks http/https only and
-never follows redirects (no SSRF to `file://` or internal hosts).
+never follows redirects (no SSRF to `file://` or internal hosts), and reads
+multi-event SSE / batch replies.
+
+## Optional: semantic poisoning tier
+
+Catch paraphrased injections the literal checks miss by embedding tool text and
+comparing it to bastioncorpus's malicious intents. Off unless an embedder is set:
+
+```bash
+pip install "bastionsupply[semantic]"
+export BASTIONSUPPLY_EMBED_MODEL=all-MiniLM-L6-v2   # local, no egress
+bastionsupply scan tools.json                        # now also runs semantic-poisoning
+```
+
+## harden → graded policy
+
+`harden` denies critical/high tools and, for allowed-but-sensitive tools (e.g. a
+network capability), emits graded caution the whole family understands: a
+`rate_limits` hint for agentbastion and a per-tool `scrub_results` override for
+bastiongate.
 
 MIT.

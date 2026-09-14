@@ -69,18 +69,32 @@ def _hidden_codepoints(text: str) -> list[tuple[str, str]]:
     return hits
 
 
-# common Cyrillic/Greek -> Latin look-alikes, for a confusable skeleton
+# cross-script look-alikes -> Latin, for a confusable skeleton. NFKC (applied
+# first) already folds fullwidth/compatibility forms; this table covers the
+# cross-script confusables NFKC does not (Cyrillic, Greek, Armenian, ...).
 _HOMOGLYPHS = {
+    # Cyrillic lower
     "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y",
     "к": "k", "м": "m", "т": "t", "в": "b", "н": "h", "ѕ": "s", "і": "i",
-    "ј": "j", "ԁ": "d", "ο": "o", "ε": "e", "α": "a", "ρ": "p", "τ": "t",
-    "ν": "v", "κ": "k", "χ": "x", "ι": "i",
+    "ј": "j", "ԁ": "d", "ԛ": "q", "ԝ": "w", "г": "r", "п": "n", "л": "n",
+    # Cyrillic upper
+    "А": "a", "Е": "e", "О": "o", "Р": "p", "С": "c", "Х": "x", "У": "y",
+    "К": "k", "М": "m", "Т": "t", "В": "b", "Н": "h", "І": "i", "Ј": "j",
+    # Greek
+    "ο": "o", "ε": "e", "α": "a", "ρ": "p", "τ": "t", "ν": "v", "κ": "k",
+    "χ": "x", "ι": "i", "υ": "u", "Ο": "o", "Α": "a", "Ε": "e", "Ρ": "p",
+    "Τ": "t", "Κ": "k", "Χ": "x", "Β": "b", "Η": "h", "Ι": "i", "Μ": "m",
+    "Ν": "n", "Υ": "y", "Ζ": "z",
+    # Armenian / other frequent confusables
+    "օ": "o", "ѐ": "e", "ᴀ": "a", "ᴄ": "c",
 }
 
 
 def _skeleton(name: str) -> str:
-    """Fold homoglyphs to Latin so look-alike names collide with the real one."""
-    return "".join(_HOMOGLYPHS.get(c, c) for c in name.lower())
+    """Fold to a confusable skeleton so look-alike names collide with the real
+    one: NFKC (fullwidth/compat) first, then cross-script homoglyphs."""
+    folded = unicodedata.normalize("NFKC", name).lower()
+    return "".join(_HOMOGLYPHS.get(c, c) for c in folded)
 
 
 def _param_names(t: Tool) -> list[str]:
@@ -199,6 +213,31 @@ def check_secret_solicitation(server: Server) -> list[Finding]:
     return out
 
 
+def check_semantic_poisoning(server: Server) -> list[Finding]:
+    """Optional: flag tool text semantically close to a known injection intent.
+    No-op unless an embedder is configured (BASTIONSUPPLY_EMBED_MODEL)."""
+    from .semantic import build_detector, threshold
+
+    score = build_detector()
+    if score is None:
+        return []
+    thr = threshold()
+    out = []
+    for t in server.tools:
+        for field_name, text in (("description", t.description), ("parameter", t.param_text)):
+            if not text.strip():
+                continue
+            if score(text) >= thr:
+                where = "description" if field_name == "description" else "parameter"
+                out.append(Finding(
+                    check="semantic-poisoning", severity="high", tool=t.name,
+                    message=f"Tool {where} is semantically similar to a known injection intent.",
+                    evidence=text[:120],
+                ))
+                break
+    return out
+
+
 def check_hidden_unicode(server: Server) -> list[Finding]:
     out = []
     for t in server.tools:
@@ -256,10 +295,22 @@ def check_homoglyph_name(server: Server) -> list[Finding]:
                 ))
         for pname in _param_names(t):
             pscripts = _scripts_in(pname)
-            if len(pscripts) > 1 and "LATIN" in pscripts:
+            confusable = _skeleton(pname) != unicodedata.normalize("NFKC", pname).lower()
+            mixed = len(pscripts) > 1 and "LATIN" in pscripts
+            if not (confusable or mixed):
+                continue
+            # a param name that folds to a sibling tool's name is impersonating it
+            twin = next((n for n in by_skel.get(_skeleton(pname), set()) if n != t.name), None)
+            if twin:
+                out.append(Finding(
+                    check="homoglyph-name", severity="critical", tool=t.name,
+                    message=f"Parameter name '{_esc(pname)}' is a homoglyph look-alike of tool '{twin}'.",
+                    evidence=_esc(pname),
+                ))
+            else:
                 out.append(Finding(
                     check="homoglyph-name", severity="high", tool=t.name,
-                    message=f"Parameter name '{_esc(pname)}' mixes scripts ({', '.join(sorted(pscripts))}); possible homoglyph spoofing.",
+                    message=f"Parameter name '{_esc(pname)}' uses look-alike characters; possible homoglyph spoofing.",
                     evidence=_esc(pname),
                 ))
     return out
@@ -267,6 +318,7 @@ def check_homoglyph_name(server: Server) -> list[Finding]:
 
 ALL_CHECKS = (
     check_tool_poisoning,
+    check_semantic_poisoning,
     check_hidden_unicode,
     check_homoglyph_name,
     check_tool_shadowing,

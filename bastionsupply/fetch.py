@@ -186,9 +186,11 @@ def fetch_http(url: str, name: str = "", timeout: float = 20.0) -> Server:
         "jsonrpc": "2.0", "id": 1, "method": "initialize",
         "params": {"protocolVersion": _PROTOCOL, "capabilities": {},
                    "clientInfo": {"name": "bastionsupply", "version": "0"}},
-    }, None, timeout)
+    }, None, timeout, want_id=1)
+    # the initialized notification must carry the session id the server issued
     _http_post(url, {"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout)
-    obj, _sid = _http_post(url, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, sid, timeout)
+    obj, _sid = _http_post(url, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                           sid, timeout, want_id=2)
     if not obj:
         raise RuntimeError("no tools/list response from server")
     if "error" in obj:
@@ -197,8 +199,12 @@ def fetch_http(url: str, name: str = "", timeout: float = 20.0) -> Server:
     return Server(name=name or url, tools=tools, source=url)
 
 
-def _http_post(url, msg, session, timeout):
-    """POST one JSON-RPC message; return (reply_obj_or_None, session_id)."""
+def _http_post(url, msg, session, timeout, want_id=None):
+    """POST one JSON-RPC message; return (reply_for_want_id_or_None, session_id).
+
+    Handles JSON, JSON-RPC batch arrays, and multi-event SSE streams, picking the
+    reply whose id matches `want_id`.
+    """
     req = urllib.request.Request(
         url, data=json.dumps(msg).encode("utf-8"), method="POST",
         headers={"Content-Type": "application/json",
@@ -206,25 +212,56 @@ def _http_post(url, msg, session, timeout):
     )
     if session:
         req.add_header("Mcp-Session-Id", session)
-    resp = _OPENER.open(req, timeout=timeout)
+    try:
+        resp = _OPENER.open(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"HTTP {e.code} from MCP server: {e.reason}") from e
     sid = resp.headers.get("Mcp-Session-Id") or session
     data = resp.read(MAX_HTTP_BODY)
     if not data:
         return None, sid  # e.g. 202 Accepted for a notification
     if resp.headers.get("Content-Type", "").startswith("text/event-stream"):
-        return _first_sse_json(data), sid
-    return json.loads(data), sid
+        msgs = _sse_messages(data)
+    else:
+        obj = json.loads(data)
+        msgs = obj if isinstance(obj, list) else [obj]
+    return _pick(msgs, want_id), sid
 
 
-def _first_sse_json(data: bytes):
-    """Extract the first SSE event's JSON data payload."""
-    payload = []
+def _sse_messages(data: bytes) -> list:
+    """All JSON-RPC messages across every event in an SSE stream (arrays flattened)."""
+    msgs: list = []
+    payload: list[str] = []
+
+    def flush():
+        if not payload:
+            return
+        try:
+            obj = json.loads("\n".join(payload))
+            msgs.extend(obj if isinstance(obj, list) else [obj])
+        except json.JSONDecodeError:
+            pass
+
     for line in data.decode("utf-8", "replace").splitlines():
         if line.startswith("data:"):
             payload.append(line[5:].lstrip())
-        elif line == "" and payload:
-            break
-    return json.loads("\n".join(payload)) if payload else {}
+        elif line == "":
+            flush()
+            payload = []
+    flush()
+    return msgs
+
+
+def _pick(msgs: list, want_id):
+    """The message matching want_id, else the first carrying a result/error."""
+    if want_id is not None:
+        for m in msgs:
+            if isinstance(m, dict) and m.get("id") == want_id:
+                return m
+    for m in msgs:
+        if isinstance(m, dict) and ("result" in m or "error" in m):
+            return m
+    return msgs[0] if msgs else None
 
 
 # --------------------------------------------------------------------------- #

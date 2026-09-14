@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0
+
+- **Fuller confusables**: the homoglyph skeleton now NFKC-folds (catching
+  fullwidth / compatibility look-alikes) and covers many more cross-script
+  characters. Parameter names are checked via the skeleton too, and a parameter
+  whose name folds to a sibling tool's name is flagged as impersonation.
+- **Semantic poisoning tier** (optional, `bastionsupply[semantic]`): embeds tool
+  text and compares it to bastioncorpus's malicious intents (`to_semantic`),
+  catching paraphrased injections. Off unless `BASTIONSUPPLY_EMBED_MODEL` is set.
+- **fetch_http**: reads multi-event SSE streams and JSON-RPC batch arrays,
+  picks the reply by id, threads the session id through, and reports HTTP errors
+  clearly.
+- **Graded `harden` policy**: allowed-but-sensitive tools get a `rate_limits`
+  hint (agentbastion) and a per-tool `scrub_results` override (bastiongate),
+  instead of only allow/deny.
+
 ## 0.3.1
 
 - Fix: homoglyph sibling-impersonation flagged **both** the look-alike and the
