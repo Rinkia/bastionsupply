@@ -38,6 +38,10 @@ def _load(args) -> list[Server]:
             _die("--stdio requires --live (it spawns the server)")
         cmd, cmd_args = fetch.parse_stdio_spec(args.stdio)
         return [fetch.fetch_stdio(cmd, cmd_args, name=args.name or "")]
+    if args.http:
+        if not args.live:
+            _die("--http requires --live (it contacts a remote server)")
+        return [fetch.fetch_http(args.http, name=args.name or "")]
     if not args.target:
         _die("give a tools.json path, or --stdio/--config with --live")
     return [fetch.load_json_file(args.target, name=args.name)]
@@ -46,6 +50,7 @@ def _load(args) -> list[Server]:
 def _add_target_flags(p) -> None:
     p.add_argument("target", nargs="?", help="path to a tools/list JSON dump")
     p.add_argument("--stdio", help='live: spawn "command arg1 arg2" and scan it')
+    p.add_argument("--http", help="live: a remote MCP Streamable-HTTP server URL")
     p.add_argument("--config", help="live: an mcp.json / Claude config to enumerate")
     p.add_argument("--server", help="with --config: only this server name")
     p.add_argument("--live", action="store_true", help="allow spawning server processes")

@@ -14,8 +14,10 @@ The pre-flight leg of the **bastion family**:
 | [bastionprobe](https://github.com/Rinkia/bastionprobe) | **attack** — pentest your agent with injections |
 | [bastiontrace](https://github.com/Rinkia/bastiontrace) | **investigate** — forensics on an agent trace |
 
-No network, no LLM, no dependencies — pure static analysis of what a server
-*claims about itself*, which is exactly where the attack hides.
+Offline scanning is pure static analysis of what a server *claims about itself*
+— no LLM, no network. Its one dependency is
+[bastioncorpus](https://github.com/Rinkia/bastioncorpus), the shared
+prompt-injection dataset the whole bastion family uses for attack signatures.
 
 ## Install
 
@@ -31,6 +33,9 @@ bastionsupply scan tools.json
 
 # live: spawn a stdio MCP server and scan the tools it advertises
 bastionsupply scan --stdio "npx -y @some/mcp-server" --live
+
+# live: scan a remote MCP Streamable-HTTP server
+bastionsupply scan --http https://some.host/mcp --live
 
 # live: scan every server in an MCP client config
 bastionsupply scan --config ~/.config/mcp.json --live
@@ -52,7 +57,7 @@ in CI to fail a build that pulls in a poisoned server.
 |-------|----------|---------------|
 | `tool-poisoning` | critical | instructions aimed at the model — in the tool **description or a parameter** |
 | `hidden-unicode` | critical | format / control / private-use chars (zero-width, bidi, tag) hiding in a name, description, **or parameter** |
-| `homoglyph-name` | high | tool name mixes scripts (e.g. Cyrillic + Latin) — look-alike impersonation of another tool |
+| `homoglyph-name` | critical/high | a tool (or parameter) name using look-alike chars — **critical** when it folds to the same skeleton as a sibling tool (active impersonation), **high** for a mixed-script name |
 | `tool-shadowing` | high | a tool's description talks about *other* tools — hijacking their behavior |
 | `secret-solicitation` | high | a parameter asks the model to hand over an api_key / token / password |
 | `sensitive-capability` | high/med | tool exposes exec, delete, network, secret-read, or privilege escalation |
@@ -74,9 +79,7 @@ print("safe" if report.ok else "risky", report.risk)
 `tools/list`. Only run them on servers you intend to execute. Offline
 `scan tools.json` never runs anything. Live fetch is bounded — a hostile server
 that hangs or streams a giant reply is cut off by the timeout and a per-message
-size cap, not left to hang or exhaust memory.
-
-HTTP/SSE transport isn't implemented yet — stdio covers the common
-locally-installed case.
+size cap, not left to hang or exhaust memory. `--http` speaks http/https only and
+never follows redirects (no SSRF to `file://` or internal hosts).
 
 MIT.

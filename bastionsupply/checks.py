@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from .corpus import poison_signatures
 from .models import Finding, Server, Tool
 
 # --- tool poisoning: instructions in a description aimed at the model ----------
@@ -68,6 +69,30 @@ def _hidden_codepoints(text: str) -> list[tuple[str, str]]:
     return hits
 
 
+# common Cyrillic/Greek -> Latin look-alikes, for a confusable skeleton
+_HOMOGLYPHS = {
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y",
+    "к": "k", "м": "m", "т": "t", "в": "b", "н": "h", "ѕ": "s", "і": "i",
+    "ј": "j", "ԁ": "d", "ο": "o", "ε": "e", "α": "a", "ρ": "p", "τ": "t",
+    "ν": "v", "κ": "k", "χ": "x", "ι": "i",
+}
+
+
+def _skeleton(name: str) -> str:
+    """Fold homoglyphs to Latin so look-alike names collide with the real one."""
+    return "".join(_HOMOGLYPHS.get(c, c) for c in name.lower())
+
+
+def _param_names(t: Tool) -> list[str]:
+    schema = t.input_schema if isinstance(t.input_schema, dict) else {}
+    props = schema.get("properties", {})
+    return list(props) if isinstance(props, dict) else []
+
+
+def _esc(s: str) -> str:
+    return s.encode("unicode_escape").decode("ascii")
+
+
 def _scripts_in(text: str) -> set[str]:
     """Alphabetic scripts present (LATIN, CYRILLIC, GREEK, ...), via char names."""
     scripts = set()
@@ -82,23 +107,37 @@ def _scripts_in(text: str) -> set[str]:
 
 
 def check_tool_poisoning(server: Server) -> list[Finding]:
-    """Instructions aimed at the model — in the description OR a parameter."""
+    """Instructions aimed at the model — in the description OR a parameter.
+
+    Two signal sources: regex heuristics, and known attack strings from the
+    shared bastioncorpus dataset.
+    """
+    sigs = poison_signatures()
     out = []
     for t in server.tools:
+        finding = None
         for field_name, text in (("description", t.description), ("parameter", t.param_text)):
+            where = "Tool description" if field_name == "description" else "Tool parameter"
             hit = next((m for rx in _POISON if (m := rx.search(text))), None)
             if hit:
-                where = "Tool description" if field_name == "description" else "Tool parameter"
-                out.append(
-                    Finding(
-                        check="tool-poisoning",
-                        severity="critical",
-                        tool=t.name,
-                        message=f"{where} contains an instruction aimed at the model, not a description of the tool.",
-                        evidence=_snippet(text, hit.start(), hit.end()),
-                    )
+                finding = Finding(
+                    check="tool-poisoning", severity="critical", tool=t.name,
+                    message=f"{where} contains an instruction aimed at the model, not a description of the tool.",
+                    evidence=_snippet(text, hit.start(), hit.end()),
                 )
-                break  # one finding per tool is enough signal
+                break
+            low = text.lower()
+            corpus_hit = next((phrase for _cat, phrase in sigs if phrase in low), None)
+            if corpus_hit:
+                idx = low.find(corpus_hit)
+                finding = Finding(
+                    check="tool-poisoning", severity="critical", tool=t.name,
+                    message=f"{where} contains a known prompt-injection payload (bastioncorpus).",
+                    evidence=_snippet(text, idx, idx + len(corpus_hit)),
+                )
+                break
+        if finding:
+            out.append(finding)
     return out
 
 
@@ -181,21 +220,43 @@ def check_hidden_unicode(server: Server) -> list[Finding]:
 
 
 def check_homoglyph_name(server: Server) -> list[Finding]:
-    """A tool name mixing alphabetic scripts (e.g. Latin + Cyrillic) is a
-    homoglyph-spoofing signal — impersonating another tool by look-alike chars."""
+    """Homoglyph spoofing: a tool (or parameter) name using look-alike chars.
+
+    - sibling impersonation: a name that folds to the SAME skeleton as another
+      tool's name is actively mimicking it (critical).
+    - mixed-script name/parameter: Latin blended with another script (high).
+    """
     out = []
+    # sibling impersonation via confusable-skeleton collision
+    by_skel: dict[str, set[str]] = {}
     for t in server.tools:
-        scripts = _scripts_in(t.name)
-        if len(scripts) > 1 and "LATIN" in scripts:
-            out.append(
-                Finding(
-                    check="homoglyph-name",
-                    severity="high",
-                    tool=t.name,
+        by_skel.setdefault(_skeleton(t.name), set()).add(t.name)
+    impersonators = {n for names in by_skel.values() if len(names) > 1 for n in names}
+
+    for t in server.tools:
+        if t.name in impersonators:
+            twins = sorted(by_skel[_skeleton(t.name)] - {t.name})
+            out.append(Finding(
+                check="homoglyph-name", severity="critical", tool=t.name,
+                message=f"Tool name is a homoglyph look-alike of another tool: {', '.join(twins)}.",
+                evidence=_esc(t.name),
+            ))
+        else:
+            scripts = _scripts_in(t.name)
+            if len(scripts) > 1 and "LATIN" in scripts:
+                out.append(Finding(
+                    check="homoglyph-name", severity="high", tool=t.name,
                     message=f"Tool name mixes scripts ({', '.join(sorted(scripts))}); possible homoglyph spoofing.",
-                    evidence=t.name.encode("unicode_escape").decode("ascii"),
-                )
-            )
+                    evidence=_esc(t.name),
+                ))
+        for pname in _param_names(t):
+            pscripts = _scripts_in(pname)
+            if len(pscripts) > 1 and "LATIN" in pscripts:
+                out.append(Finding(
+                    check="homoglyph-name", severity="high", tool=t.name,
+                    message=f"Parameter name '{_esc(pname)}' mixes scripts ({', '.join(sorted(pscripts))}); possible homoglyph spoofing.",
+                    evidence=_esc(pname),
+                ))
     return out
 
 

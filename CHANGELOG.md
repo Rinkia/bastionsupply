@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0
+
+- **Wired bastioncorpus** (now a dependency): tool-poisoning also matches known
+  attack strings from the shared bastion injection dataset, catching payloads
+  the regex heuristics miss.
+- **Homoglyph detection extended**: parameter names are checked too, and a tool
+  name that folds to the same confusable skeleton as a sibling tool is flagged
+  **critical** (active impersonation) rather than just mixed-script high.
+- **HTTP/SSE fetch** (`scan --http URL --live`): scan a remote MCP
+  Streamable-HTTP server. http/https only, no redirect following (no SSRF),
+  bounded response size.
+
 ## 0.2.0
 
 Security + correctness hardening (found in a review pass):

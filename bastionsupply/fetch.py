@@ -15,11 +15,27 @@ import shlex
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 from .models import Server, Tool
 
 MAX_LINE = 5_000_000  # cap one JSON-RPC message (bytes) — bound memory vs a hostile server
+MAX_HTTP_BODY = 10_000_000  # cap an HTTP response body
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A malicious server must not bounce us to file:// or an internal address."""
+
+    def redirect_request(self, *a, **k):
+        return None
+
+
+_OPENER = urllib.request.build_opener(
+    _NoRedirect, urllib.request.HTTPHandler, urllib.request.HTTPSHandler
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -154,6 +170,64 @@ def _read_loop(proc, want_id, timeout):
 
 
 # --------------------------------------------------------------------------- #
+# live: HTTP (MCP Streamable HTTP) — initialize -> initialized -> tools/list
+# --------------------------------------------------------------------------- #
+def fetch_http(url: str, name: str = "", timeout: float = 20.0) -> Server:
+    """Fetch tool definitions from a remote MCP Streamable-HTTP server.
+
+    Contacts `url` over http/https only, never follows redirects (no SSRF to
+    file:// or internal hosts), and caps the response body.
+    """
+    scheme = urllib.parse.urlparse(url).scheme
+    if scheme not in ("http", "https"):
+        raise ValueError(f"url must be http/https, got {scheme!r}")
+
+    _obj, sid = _http_post(url, {
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {"protocolVersion": _PROTOCOL, "capabilities": {},
+                   "clientInfo": {"name": "bastionsupply", "version": "0"}},
+    }, None, timeout)
+    _http_post(url, {"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout)
+    obj, _sid = _http_post(url, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, sid, timeout)
+    if not obj:
+        raise RuntimeError("no tools/list response from server")
+    if "error" in obj:
+        raise RuntimeError(f"MCP error: {obj['error']}")
+    tools = tools_from_obj(obj.get("result", obj))
+    return Server(name=name or url, tools=tools, source=url)
+
+
+def _http_post(url, msg, session, timeout):
+    """POST one JSON-RPC message; return (reply_obj_or_None, session_id)."""
+    req = urllib.request.Request(
+        url, data=json.dumps(msg).encode("utf-8"), method="POST",
+        headers={"Content-Type": "application/json",
+                 "Accept": "application/json, text/event-stream"},
+    )
+    if session:
+        req.add_header("Mcp-Session-Id", session)
+    resp = _OPENER.open(req, timeout=timeout)
+    sid = resp.headers.get("Mcp-Session-Id") or session
+    data = resp.read(MAX_HTTP_BODY)
+    if not data:
+        return None, sid  # e.g. 202 Accepted for a notification
+    if resp.headers.get("Content-Type", "").startswith("text/event-stream"):
+        return _first_sse_json(data), sid
+    return json.loads(data), sid
+
+
+def _first_sse_json(data: bytes):
+    """Extract the first SSE event's JSON data payload."""
+    payload = []
+    for line in data.decode("utf-8", "replace").splitlines():
+        if line.startswith("data:"):
+            payload.append(line[5:].lstrip())
+        elif line == "" and payload:
+            break
+    return json.loads("\n".join(payload)) if payload else {}
+
+
+# --------------------------------------------------------------------------- #
 # discovery: read an MCP client config's mcpServers map
 # --------------------------------------------------------------------------- #
 def discover_servers(config_path: str | Path) -> list[dict]:
@@ -179,6 +253,3 @@ def parse_stdio_spec(spec: str) -> tuple[str, list[str]]:
     if not parts:
         raise ValueError("empty --stdio spec")
     return parts[0], parts[1:]
-
-# ponytail: HTTP/SSE transport not implemented — stdio covers the common
-# locally-installed case. Add fetch_http() when a remote server needs scanning.
