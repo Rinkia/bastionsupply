@@ -88,6 +88,11 @@ def main(argv=None) -> int:
     _add_target_flags(ph)
     ph.add_argument("-o", "--out", help="write policy.yaml (default: stdout)")
 
+    pd = sub.add_parser("doctor", help="check installed Bastion tools against PyPI")
+    pd.add_argument("--json", action="store_true", help="emit JSON")
+    pd.add_argument("--offline", action="store_true",
+                    help="skip PyPI, just list installed versions")
+
     args = ap.parse_args(argv)
 
     if args.cmd == "scan":
@@ -98,6 +103,9 @@ def main(argv=None) -> int:
         return _cmd_verify(args)
     if args.cmd == "harden":
         return _cmd_harden(args)
+    if args.cmd == "doctor":
+        from . import doctor
+        return doctor.run(as_json=args.json, check_pypi=not args.offline)
     return 2
 
 
