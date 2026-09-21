@@ -75,6 +75,7 @@ def main(argv=None) -> int:
     ps = sub.add_parser("scan", help="scan MCP tools for supply-chain risks")
     _add_target_flags(ps)
     ps.add_argument("--json", action="store_true", help="emit JSON")
+    ps.add_argument("--sarif", action="store_true", help="emit SARIF 2.1.0 (GitHub code scanning)")
 
     pl = sub.add_parser("lock", help="write a lockfile of tool hashes")
     _add_target_flags(pl)
@@ -113,7 +114,10 @@ def _cmd_scan(args) -> int:
     worst_ok = True
     for i, server in enumerate(_load(args)):
         rep = scan(server)
-        if args.json:
+        if args.sarif:
+            from . import sarif
+            print(sarif.to_sarif(rep))
+        elif args.json:
             print(report.to_json(rep))
         else:
             if i:

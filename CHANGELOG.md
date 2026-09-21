@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- **SARIF output**: `bastionsupply scan --sarif` emits SARIF 2.1.0 so findings
+  upload to GitHub code scanning (`github/codeql-action/upload-sarif`) or any SARIF
+  ingester. Severity maps to level (critical/high→error, medium→warning, low→note);
+  the offending tool rides in a logicalLocation (MCP metadata has no source line).
+
 ## 0.5.0
 
 - **Email-egress capability** added to `sensitive-capability`: a mail-send tool
