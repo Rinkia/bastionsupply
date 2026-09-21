@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+
+- **Email-egress capability** added to `sensitive-capability`: a mail-send tool
+  (`sendEmail`, `sendmail`, SMTP, BCC) is a data-egress path and is now surfaced
+  pre-flight. Motivated by the `postmark-mcp` case (Koi Security, Sep 2025) — the
+  first in-the-wild malicious MCP server, which BCC-exfiltrated sent email.
+  Read-only mail tools (`listTemplates`, `getDeliveryStats`) are not flagged.
+- **Case-study fixture** `tests/fixtures/postmark_mcp_tools.json` + regression test.
+  Honest boundary: the clone's tools/list was clean, so bastionsupply surfaces the
+  egress *capability* but does not (and the test asserts it does not) fabricate a
+  tool-poisoning hit — the code-level BCC is a bastiongate/bastionskill catch.
+
 ## 0.4.0
 
 - **Fuller confusables**: the homoglyph skeleton now NFKC-folds (catching

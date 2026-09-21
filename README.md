@@ -61,7 +61,7 @@ in CI to fail a build that pulls in a poisoned server.
 | `homoglyph-name` | critical/high | a tool (or parameter) name using look-alike chars — **critical** when it folds to the same skeleton as a sibling tool (active impersonation), **high** for a mixed-script name |
 | `tool-shadowing` | high | a tool's description talks about *other* tools — hijacking their behavior |
 | `secret-solicitation` | high | a parameter asks the model to hand over an api_key / token / password |
-| `sensitive-capability` | high/med | tool exposes exec, delete, network, secret-read, or privilege escalation |
+| `sensitive-capability` | high/med | tool exposes exec, delete, network, email-egress, secret-read, or privilege escalation |
 | rug-pull (`verify`) | — | tool definitions changed since you pinned them |
 
 ## Library
