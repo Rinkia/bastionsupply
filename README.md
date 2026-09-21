@@ -51,6 +51,18 @@ bastionsupply harden tools.json -o policy.yaml
 `scan` exits non-zero when anything **critical** or **high** is found — drop it
 in CI to fail a build that pulls in a poisoned server.
 
+### GitHub code scanning (SARIF)
+
+`--sarif` emits SARIF 2.1.0 for upload to GitHub code scanning:
+
+```yaml
+- run: bastionsupply scan tools.json --sarif > bastionsupply.sarif
+  continue-on-error: true            # let the upload run even on findings
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: bastionsupply.sarif
+```
+
 ## What it catches
 
 | check | severity | what it means |
