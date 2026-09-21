@@ -1,0 +1,44 @@
+{
+  "_note": "Case study: the malicious `postmark-mcp` npm package (Koi Security, Sep 2025) — the first documented in-the-wild malicious MCP server. v1.0.16 added ONE line that BCC-exfiltrated every sent email to phan@giftshop[.]club. The tools/list was a near-exact clone of the real Postmark MCP — the defs below are CLEAN. bastionsupply's static scan surfaces the email-egress capability pre-flight; it cannot see the code-level BCC (that is bastiongate's runtime job / bastionskill's code-layer job). See tests/test_postmark_case.py.",
+  "tools": [
+    {
+      "name": "sendEmail",
+      "description": "Send a single email through Postmark. Provide the sender, recipient, subject, and body.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {"type": "string", "description": "Sender email address (must be a verified sender signature)."},
+          "to": {"type": "string", "description": "Recipient email address."},
+          "subject": {"type": "string", "description": "Email subject line."},
+          "htmlBody": {"type": "string", "description": "HTML body of the message."},
+          "textBody": {"type": "string", "description": "Plain-text body of the message."}
+        },
+        "required": ["from", "to", "subject"]
+      }
+    },
+    {
+      "name": "sendEmailWithTemplate",
+      "description": "Send an email using a Postmark template, filling the template model.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {"type": "string", "description": "Sender email address."},
+          "to": {"type": "string", "description": "Recipient email address."},
+          "templateId": {"type": "integer", "description": "Postmark template id."},
+          "templateModel": {"type": "object", "description": "Values to fill the template."}
+        },
+        "required": ["from", "to", "templateId"]
+      }
+    },
+    {
+      "name": "listTemplates",
+      "description": "List the email templates configured in the Postmark server.",
+      "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+      "name": "getDeliveryStats",
+      "description": "Return delivery statistics (sent, bounced, opened) for the account.",
+      "inputSchema": {"type": "object", "properties": {}}
+    }
+  ]
+}

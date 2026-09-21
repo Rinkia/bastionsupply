@@ -37,6 +37,12 @@ _SENSITIVE = {
     "exec": r"\b(exec|eval|shell|subprocess|os\.system|spawn|/bin/sh)\b",
     "delete": r"\b(delete|remove|rm\s+-rf|unlink|drop\s+table|truncate|wipe)\b",
     "network": r"\b(http|https|fetch|curl|wget|upload|exfiltrat|webhook|post\s+to)\b",
+    # Email/message egress: a mail-send tool is a data-egress path (the capability
+    # the postmark-mcp backdoor abused to BCC-exfiltrate mail). Targets sending,
+    # not read-only mail tools, so `send_email`/`sendEmail`/SMTP/BCC fire but
+    # `list_emails` does not. Surfaced pre-flight; the code-level BCC itself is a
+    # runtime/code-layer catch (bastiongate / bastionskill), not a tools/list one.
+    "email-egress": r"\b(send[\s_\-]?e?mail|sendmail|smtp|bcc|forward\w*\s+(?:the\s+)?e?mails?)",
     "secrets": r"\b(secret|credential|api[_\- ]?key|token|password|ssh|private[_\- ]?key|\.env|os\.environ)\b",
     "privilege": r"\b(sudo|chmod|chown|root|setuid|escalat)\b",
 }
