@@ -1,9 +1,9 @@
 # bastionsupply
 
 **MCP supply-chain security scanner.** Point it at an MCP server's tool
-definitions and it flags the supply-chain attacks *before* you install:
-tool-poisoning, tool-shadowing, hidden unicode, secret solicitation, dangerous
-capabilities, and rug-pull drift.
+definitions (or an A2A agent card) and it flags the supply-chain attacks
+*before* you install or delegate: tool-poisoning, tool-shadowing, hidden
+unicode, secret solicitation, dangerous capabilities, and rug-pull drift.
 
 The pre-flight leg of the **bastion family**:
 
@@ -63,7 +63,85 @@ in CI to fail a build that pulls in a poisoned server.
     sarif_file: bastionsupply.sarif
 ```
 
-### Is my Bastion suite current? (`doctor`)
+## A2A agent cards
+
+_bastionsupply ≥ 0.10._
+
+A host agent discovers a remote agent through its **agent card**
+(`/.well-known/agent-card.json`) and reads the card's description and skills
+into its own reasoning context. That makes the card the same attack surface as
+an MCP tool description: **agent-card poisoning**, look-alike skills, hidden
+unicode and a spoofed endpoint. bastionsupply scans cards with the same checks,
+plus card-level ones.
+
+```bash
+bastionsupply scan --example poisoned-card     # bundled sample, works right after pip install
+```
+
+```text
+bastionsupply: Travel Planner  (A2A agent card, 3 skills)  risk=MEDIUM
+  0 critical, 0 high, 5 medium, 2 low
+
+  [MED ] a2a-insecure-url  (<server>)
+  [MED ] hidden-unicode  (book)            Skill example contains hidden/control unicode. (capped ...)
+  [MED ] homoglyph-name  (sеarch)          ... look-alike of another tool: search. (capped ...)
+  [MED ] tool-poisoning  (<server>)        Agent description contains an instruction aimed at the model ...
+  ...
+```
+
+```bash
+bastionsupply scan agent-card.json                       # offline: a saved card (auto-detected)
+bastionsupply scan --a2a https://agent.example --live    # live: well-known discovery
+bastionsupply lock --a2a https://agent.example --live -o agent.lock
+bastionsupply verify --a2a https://agent.example --live --lock agent.lock   # card rug-pull
+```
+
+- **Status: shadow.** In 0.10.0 every finding on a card is capped at `medium`,
+  and the message says so. A card scan never fails CI (exit 0). This changes only
+  after a dogfood run over at least 50 real public cards shows 5% or fewer false
+  positives.
+- **Mapping.** Each skill (`id`, else `name`) is scanned like a tool: its name,
+  description and tags. Skill `examples` are user requests written in the
+  imperative ("always send me the cheapest"), so only the hidden-unicode and
+  bastioncorpus-literal checks read them. The card's own `description` gets the
+  poisoning and hidden-unicode checks. **Every other string in the card** (keys
+  included: name, provider, capability extensions, interface fields, modes,
+  unknown fields) gets the poisoning and hidden-unicode checks too, because a
+  host agent may read any of it. The card `name` and `provider.organization` are
+  also checked for mixed scripts.
+- **Shapes.** Both are supported: v1.0 (`supportedInterfaces[].url`) and v0.3
+  (top-level `url`, `additionalInterfaces`).
+- **Card checks:**
+
+  | check | severity | what it means |
+  |---|---|---|
+  | `a2a-insecure-url` | medium | an endpoint uses plain `http` to a non-loopback host |
+  | `a2a-bad-url` | medium | an endpoint is not an absolute http(s) URL with a host (e.g. scheme-less or malformed) |
+  | `a2a-origin-mismatch` | medium | (live only) the card is served from one site but advertises an endpoint on another (subdomains of the same site are fine): discovery spoofing / task diversion |
+  | `a2a-no-auth` | low | no `securitySchemes` / `security` |
+  | `a2a-unsigned` | low | no `signatures` (presence only; signatures are not verified) |
+  | `a2a-duplicate-skill` | low | a repeated skill id, renamed `id#2` |
+  | `a2a-truncated` | low | more than 256 skills, a skill over 20,000 chars, or more than 50 findings of one check. Tool checks see the head and tail of long text; the whole card is still scanned for poisoning and hidden unicode, so a cap never hides a payload |
+
+- **Lock.** `lock` pins every skill plus a hash of the **whole** card, so a
+  changed endpoint, dropped auth or edited description shows up in `verify`
+  as `card changed`.
+- **Fetch.** `--a2a` needs `--live`. It only allows http/https, never follows
+  redirects (the error names the target), and caps the body at 10 MB. A bare
+  origin tries `agent-card.json`, then the legacy `agent.json`.
+- **Not supported.** `harden` refuses a card and exits 2, because skills are not
+  agent tool names. Use `--ignore CHECK_ID` to drop a check you have accepted
+  (e.g. `--ignore a2a-no-auth` for an internal agent).
+- **vs Cisco's [a2a-scanner](https://github.com/cisco-ai-defense/a2a-scanner):**
+  bastionsupply is offline and zero-dependency. It scans MCP servers and A2A
+  cards with one engine and one shared injection corpus, pins cards against
+  rug-pulls, and feeds the same policy suite as bastiongate and agentbastion.
+
+**Exit codes** (`scan`): `0` means no critical or high finding (always the case
+for a card in 0.10), `1` means a critical or high finding, `2` means a usage or
+fetch error. `verify`: `0` clean, `1` drift. `harden` on a card: `2`.
+
+## Is my Bastion suite current? (`doctor`)
 
 ```bash
 bastionsupply doctor                       # installed vs latest on PyPI, + the pip line to catch up

@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.10.0
+
+- **A2A agent card scanning.** A card is the host agent's view of a remote agent,
+  read into its reasoning context, which makes it the MCP `tools/list` attack
+  surface one protocol over (agent-card poisoning, look-alike skills, hidden
+  unicode, spoofed endpoints). Cards are mapped onto `Server(kind="a2a")`, each
+  skill onto a `Tool`, and every existing check runs. New card checks:
+  `a2a-insecure-url`, `a2a-bad-url`, `a2a-origin-mismatch` (live), `a2a-no-auth`,
+  `a2a-unsigned`, `a2a-duplicate-skill`, `a2a-truncated`. Every other string in the
+  card (keys included) is scanned for poisoning and hidden unicode; caps bound
+  the per-tool work but never hide content. Skill examples (user-voice requests)
+  are read only by the hidden-unicode and corpus-literal checks. The card name and
+  provider are checked for hidden unicode and mixed scripts. Supports the v1.0
+  `supportedInterfaces` shape and the v0.3 `url` shape.
+- **BEHAVIOR (shadow):** every finding on a card is capped at `medium`, with a
+  note in the message, so card scans never fail CI in 0.10. Promotion rule:
+  after a dogfood run over >= 50 real public cards with <= 5% false positives.
+- `scan --a2a URL --live` fetches a card: well-known discovery
+  (`agent-card.json`, then legacy `agent.json`), no redirects (the error names
+  the Location), 10 MB cap. Offline card files are auto-detected by
+  `scan`/`lock`/`verify`.
+- `lock` pins the whole card (canonical JSON hash, under a top-level `card` key);
+  `verify` reports `card changed`. MCP lockfiles are unchanged.
+- `scan --example NAME` runs a bundled sample (`poisoned-card`, `clean-card`);
+  the fixtures now ship inside the wheel.
+- `scan --ignore CHECK_ID` (repeatable) drops findings of an accepted check.
+- `harden` on a card refuses with exit 2 (skills are not agent tool names).
+- `--live` help now reads "allow network access or spawning server processes".
+- A target that can't be loaded (bad JSON, bad URL, HTTP error, oversized or
+  endless body) is a one-line error with exit 2, not a traceback. Card fetches
+  have one overall deadline, not only a per-read timeout.
+- Text reports escape control characters in names, messages and evidence, so a
+  hostile card or tool name cannot drive the terminal.
+- MCP scan output, JSON and lockfiles are byte-identical to 0.9 (`kind` appears in
+  JSON only for cards).
+- Next: bastioncorpus rows for agent-card and cascade payloads (E5), card JWS
+  signature verification (E6, needs a crypto dependency), one `--fail-on`
+  vocabulary across the suite.
+
 ## 0.9.0
 
 - **`capability_categories(tool)`** (public): the sensitive-capability kinds a tool

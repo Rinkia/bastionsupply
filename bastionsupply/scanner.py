@@ -8,4 +8,4 @@ from .models import ScanReport, Server
 
 def scan(server: Server) -> ScanReport:
     findings = tuple(run_checks(server))
-    return ScanReport(server=server.name, tool_count=len(server.tools), findings=findings)
+    return ScanReport(server=server.name, tool_count=len(server.tools), findings=findings, kind=server.kind)

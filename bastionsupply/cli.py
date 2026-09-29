@@ -6,12 +6,15 @@
     bastionsupply lock tools.json -o supply.lock   # pin tool hashes
     bastionsupply verify tools.json --lock f.lock  # detect rug-pull drift
     bastionsupply harden tools.json -o policy.yaml # emit agentbastion policy
+    bastionsupply scan --a2a https://agent.example --live  # scan a remote A2A agent card
+    bastionsupply scan --example poisoned-card     # try it on a bundled sample
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 
 from . import fetch, harden, lockfile, report
 from .models import Server
@@ -19,7 +22,15 @@ from .scanner import scan
 
 
 def _load(args) -> list[Server]:
-    """Resolve a scan target into one or more Servers."""
+    """Resolve a scan target into one or more Servers; a bad target is exit 2, not a traceback."""
+    try:
+        return _load_target(args)
+    except (OSError, ValueError, RuntimeError, RecursionError) as e:
+        _die(f"cannot load target: {type(e).__name__}: {e}")
+        raise  # unreachable: _die exits
+
+
+def _load_target(args) -> list[Server]:
     if args.config:
         if not args.live:
             _die("--config requires --live (it spawns each server to list tools)")
@@ -42,8 +53,14 @@ def _load(args) -> list[Server]:
         if not args.live:
             _die("--http requires --live (it contacts a remote server)")
         return [fetch.fetch_http(args.http, name=args.name or "")]
+    if args.a2a:
+        if not args.live:
+            _die("--a2a requires --live (it contacts a remote agent)")
+        return [fetch.fetch_agent_card(args.a2a, name=args.name or "")]
+    if args.example:
+        return [fetch.load_json_file(_example_path(args.example), name=args.name)]
     if not args.target:
-        _die("give a tools.json path, or --stdio/--config with --live")
+        _die("give a tools.json or agent-card path, --example NAME, or --stdio/--config/--http/--a2a with --live")
     return [fetch.load_json_file(args.target, name=args.name)]
 
 
@@ -53,7 +70,11 @@ def _add_target_flags(p) -> None:
     p.add_argument("--http", help="live: a remote MCP Streamable-HTTP server URL")
     p.add_argument("--config", help="live: an mcp.json / Claude config to enumerate")
     p.add_argument("--server", help="with --config: only this server name")
-    p.add_argument("--live", action="store_true", help="allow spawning server processes")
+    p.add_argument("--a2a", metavar="URL", help="live: a remote A2A agent (origin or agent-card URL)")
+    p.add_argument("--example", metavar="NAME",
+                   help="a bundled sample: " + ", ".join(_example_names()))
+    p.add_argument("--live", action="store_true",
+                   help="allow network access or spawning server processes")
     p.add_argument("--name", help="override server name label")
 
 
@@ -76,6 +97,8 @@ def main(argv=None) -> int:
     _add_target_flags(ps)
     ps.add_argument("--json", action="store_true", help="emit JSON")
     ps.add_argument("--sarif", action="store_true", help="emit SARIF 2.1.0 (GitHub code scanning)")
+    ps.add_argument("--ignore", action="append", default=[], metavar="CHECK_ID",
+                    help="drop findings of this check (repeatable), e.g. --ignore a2a-no-auth")
 
     pl = sub.add_parser("lock", help="write a lockfile of tool hashes")
     _add_target_flags(pl)
@@ -115,8 +138,11 @@ def main(argv=None) -> int:
 
 def _cmd_scan(args) -> int:
     worst_ok = True
+    ignore = set(args.ignore)
     for i, server in enumerate(_load(args)):
         rep = scan(server)
+        if ignore:
+            rep = replace(rep, findings=tuple(f for f in rep.findings if f.check not in ignore))
         if args.sarif:
             from . import sarif
             print(sarif.to_sarif(rep))
@@ -150,11 +176,17 @@ def _cmd_verify(args) -> int:
         print(f"  added:   {', '.join(drift.added)}")
     if drift.removed:
         print(f"  removed: {', '.join(drift.removed)}")
+    if drift.card_changed:
+        print("  card changed (auth, endpoints or text differ from the pinned card)")
     return 1
 
 
 def _cmd_harden(args) -> int:
     server = _load(args)[0]
+    if server.kind == "a2a":
+        print("harden: A2A skills are not agent tool names; nothing to emit. "
+              "Use lock/verify to pin the card.", file=sys.stderr)
+        return 2
     rep = scan(server)
     yaml = harden.to_policy_yaml(rep, server.tools)
     if args.out:
@@ -165,6 +197,23 @@ def _cmd_harden(args) -> int:
     else:
         sys.stdout.write(yaml)
     return 0
+
+
+def _example_dir():
+    from importlib.resources import files
+
+    return files("bastionsupply") / "fixtures"
+
+
+def _example_names() -> list[str]:
+    return sorted(p.name[:-5] for p in _example_dir().iterdir() if p.name.endswith(".json"))
+
+
+def _example_path(name: str):
+    path = _example_dir() / f"{name}.json"
+    if not path.is_file():
+        _die(f"no example {name!r}; available: {', '.join(_example_names())}")
+    return path
 
 
 def _die(msg: str) -> None:
