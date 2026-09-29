@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.0
+
+- **`harden` emits `policy_version: 2`.** Same decisions, new shape: the file starts
+  with `policy_version: 2`, and the per-tool `scrub_results` overrides move from a
+  top-level `tools:` block to `gate: { tools: ... }`. When every tool is denied the
+  file says `allow: []` (v1 left a YAML null). The shared core (`default`, `allow`,
+  `deny`, `rate_limits`) is unchanged and read by every consumer version.
+- **Upgrade note:** bastiongateway < 0.8 ignores the `gate:` block, so a regenerated
+  policy loses its scrub overrides there (allow/deny still apply). Upgrade the gate,
+  or check with `bastionsupply doctor --policy policy.yaml`. Old v1 policies keep
+  loading unchanged.
+- Producer golden is now `tests/fixtures/policy_v2_harden_golden.yaml`, byte-identical
+  with the consumer copies in agentbastion and bastiongate.
+
 ## 0.7.0
 
 - **`doctor --policy FILE`**: checks a `policy_version: 2` policy against the installed

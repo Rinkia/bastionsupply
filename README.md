@@ -123,9 +123,14 @@ bastionsupply scan tools.json                        # now also runs semantic-po
 
 ## harden → graded policy
 
-`harden` denies critical/high tools and, for allowed-but-sensitive tools (e.g. a
-network capability), emits graded caution the whole family understands: a
-`rate_limits` hint for agentbastion and a per-tool `scrub_results` override for
-bastiongate.
+`harden` emits a `policy_version: 2` policy. It denies critical/high tools and, for
+allowed-but-sensitive tools (e.g. a network capability), emits graded caution the
+whole family understands: a `rate_limits` hint for agentbastion and a per-tool
+`scrub_results` override for bastiongate under `gate.tools`.
+
+Every agentbastion and bastiongate version reads the shared core (`default`, `allow`,
+`deny`, `rate_limits`). bastiongateway < 0.8 ignores the `gate:` block, so the scrub
+overrides need 0.8+; `bastionsupply doctor --policy policy.yaml` warns if yours is
+older.
 
 MIT.
