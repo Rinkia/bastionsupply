@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+- **`doctor --policy FILE`**: checks a `policy_version: 2` policy against the installed
+  consumers and warns when one is too old to honor it: agentbastion < 0.12 ignores
+  `detectors:` (a kill switch would not apply); bastiongateway < 0.8 ignores
+  `detectors:` and the whole `gate:` block (gate knobs fall back to defaults). JSON
+  policies are parsed; YAML is scanned for top-level keys (still zero dependencies).
+  Exit 1 on warnings, 2 if the file can't be read. `--json` includes the warnings.
+
 ## 0.6.0
 
 - **SARIF output**: `bastionsupply scan --sarif` emits SARIF 2.1.0 so findings
