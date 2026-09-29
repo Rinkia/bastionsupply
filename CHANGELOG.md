@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0
+
+- **`capability_categories(tool)`** (public): the sensitive-capability kinds a tool
+  claims (`exec`, `delete`, `network`, `email-egress`, `secrets`, `privilege`).
+  `sensitive-capability` findings are unchanged; bastiongate 0.9 uses the helper to
+  label tools for its flow guard instead of parsing finding messages.
+- **`doctor --policy` knows the flow guard.** A policy using `scan_flows`,
+  `on_tainted_egress`, `label_packs` or per-tool `labels` warns when bastiongateway
+  < 0.9 is installed, in v1 files too (older gates drop those keys silently) and
+  at any nesting depth (JSON parsed, YAML scanned per line).
+
 ## 0.8.0
 
 - **`harden` emits `policy_version: 2`.** Same decisions, new shape: the file starts

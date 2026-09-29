@@ -119,12 +119,49 @@ def _v2_features(text: str) -> tuple[bool, bool, bool]:
     return is_v2, top_level("detectors"), top_level("gate")
 
 
+# Flow-guard knobs (bastiongateway 0.9). Unlike v2 keys these can appear in a v1
+# file (top-level or under a per-tool `tools:` entry), where an older gate drops
+# them silently: a block the operator wrote would never happen.
+_FLOW_FLOOR = "0.9.0"
+_FLOW_KEYS = ("scan_flows", "on_tainted_egress", "label_packs", "labels")
+
+
+def _flow_keys(text: str) -> list[str]:
+    """Flow-guard keys present anywhere in the file (any nesting depth)."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if isinstance(data, (dict, list)):
+        found: set[str] = set()
+        stack = [data]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                found.update(k for k in node if k in _FLOW_KEYS)
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+        return sorted(found)
+    import re
+
+    return sorted(k for k in _FLOW_KEYS if re.search(rf"^\s*{k}\s*:", text, re.M))
+
+
 def policy_warnings(text: str, installed=installed_version) -> list[str]:
     """Warnings for installed consumers too old for this policy file."""
+    warnings = []
+    gw = installed("bastiongateway")
+    flow = _flow_keys(text)
+    if flow and gw and _key(gw)[:3] < _key(_FLOW_FLOOR):
+        warnings.append(
+            f"bastiongateway {gw} ignores the flow-guard key(s) {', '.join(flow)} in this "
+            "policy: tainted egress will NOT be warned about or blocked. "
+            f"Needs >= {_FLOW_FLOOR}: pip install -U bastiongateway"
+        )
     is_v2, has_detectors, has_gate_block = _v2_features(text)
     if not is_v2:
-        return []
-    warnings = []
+        return warnings
     ab = installed("agentbastion")
     if has_detectors and ab and _key(ab)[:3] < _key(_V2_FLOORS["agentbastion"]):
         warnings.append(
@@ -132,7 +169,6 @@ def policy_warnings(text: str, installed=installed_version) -> list[str]:
             f"switch / shadow modes will NOT apply. Needs >= {_V2_FLOORS['agentbastion']}: "
             "pip install -U agentbastion"
         )
-    gw = installed("bastiongateway")
     if (has_detectors or has_gate_block) and gw and _key(gw)[:3] < _key(_V2_FLOORS["bastiongateway"]):
         warnings.append(
             f"bastiongateway {gw} ignores `detectors:` and the whole `gate:` block in this "

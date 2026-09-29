@@ -12,6 +12,7 @@ drift. The pre-flight leg of the bastion family (prevent / attack / investigate
 
 from __future__ import annotations
 
+from .checks import capability_categories
 from .fetch import discover_servers, fetch_http, fetch_stdio, load_json_file, tools_from_obj
 from .harden import to_policy_yaml
 from .lockfile import make_lock, verify, write_lock
@@ -19,8 +20,9 @@ from .models import Finding, ScanReport, Server, Tool
 from .report import to_json, to_text
 from .scanner import scan
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 __all__ = [
+    "capability_categories",
     "Tool",
     "Server",
     "Finding",

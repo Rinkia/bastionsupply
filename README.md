@@ -73,8 +73,10 @@ bastionsupply doctor --policy policy.yaml  # also: will the installed tools hono
 `--policy` checks a `policy_version: 2` file against what is installed.
 agentbastion < 0.12 silently ignores `detectors:` (a kill switch would not apply), and
 bastiongateway < 0.8 ignores `detectors:` **and** the whole `gate:` block (every gate
-knob falls back to its default). Old installs can't be fixed retroactively, so this
-is how you find out. Exit code 1 on anything outdated or a policy warning, 2 if the
+knob falls back to its default). Flow-guard keys (`scan_flows`, `on_tainted_egress`,
+`label_packs`, per-tool `labels`) need bastiongateway >= 0.9 in **any** policy file,
+v1 included: an older gate drops them silently, so a block you wrote never happens.
+Old installs can't be fixed retroactively, so this is how you find out. Exit code 1 on anything outdated or a policy warning, 2 if the
 file can't be read; `--offline` skips PyPI.
 
 ## What it catches
@@ -98,6 +100,10 @@ from bastionsupply import load_json_file, scan, to_text, to_policy_yaml
 report = scan(load_json_file("tools.json"))
 print(to_text(report))
 print("safe" if report.ok else "risky", report.risk)
+
+# which sensitive capabilities a tool claims (bastiongate uses this to label tools)
+from bastionsupply import Tool, capability_categories
+capability_categories(Tool("fetch_url", "Fetch a URL over https"))  # frozenset({'network'})
 ```
 
 ## Live fetch note
