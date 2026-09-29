@@ -93,6 +93,9 @@ def main(argv=None) -> int:
     pd.add_argument("--json", action="store_true", help="emit JSON")
     pd.add_argument("--offline", action="store_true",
                     help="skip PyPI, just list installed versions")
+    pd.add_argument("--policy", metavar="FILE",
+                    help="also check that installed consumers understand this policy file "
+                         "(policy_version 2 needs agentbastion>=0.12, bastiongateway>=0.8)")
 
     args = ap.parse_args(argv)
 
@@ -106,7 +109,7 @@ def main(argv=None) -> int:
         return _cmd_harden(args)
     if args.cmd == "doctor":
         from . import doctor
-        return doctor.run(as_json=args.json, check_pypi=not args.offline)
+        return doctor.run(as_json=args.json, check_pypi=not args.offline, policy=args.policy)
     return 2
 
 

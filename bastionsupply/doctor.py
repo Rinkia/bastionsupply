@@ -93,11 +93,74 @@ def render(rows: list[dict]) -> tuple[str, int]:
     return report, len(outdated)
 
 
-def run(as_json: bool = False, check_pypi: bool = True) -> int:
+# --- doctor --policy ---------------------------------------------------------
+# Versions that understand a policy_version 2 file. Older consumers load one
+# without error but silently drop what they don't know, and no release can reach
+# back into already-installed code, so this check is how an operator finds out.
+_V2_FLOORS = {"agentbastion": "0.12.0", "bastiongateway": "0.8.0"}
+
+
+def _v2_features(text: str) -> tuple[bool, bool, bool]:
+    """(is_v2, has_detectors, has_gate_block) of a policy file. JSON (as `harden`
+    can emit) is parsed properly; YAML is scanned for top-level (column 0) keys,
+    which is all this check needs and keeps bastionsupply dependency-free."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if isinstance(data, dict):
+        return data.get("policy_version") == 2, "detectors" in data, "gate" in data
+    import re
+
+    def top_level(key: str) -> bool:
+        return re.search(rf"^{key}\s*:", text, re.M) is not None
+
+    is_v2 = re.search(r"""^policy_version\s*:\s*["']?2["']?\s*(#.*)?$""", text, re.M) is not None
+    return is_v2, top_level("detectors"), top_level("gate")
+
+
+def policy_warnings(text: str, installed=installed_version) -> list[str]:
+    """Warnings for installed consumers too old for this policy file."""
+    is_v2, has_detectors, has_gate_block = _v2_features(text)
+    if not is_v2:
+        return []
+    warnings = []
+    ab = installed("agentbastion")
+    if has_detectors and ab and _key(ab)[:3] < _key(_V2_FLOORS["agentbastion"]):
+        warnings.append(
+            f"agentbastion {ab} ignores `detectors:` in this policy_version 2 file: the kill "
+            f"switch / shadow modes will NOT apply. Needs >= {_V2_FLOORS['agentbastion']}: "
+            "pip install -U agentbastion"
+        )
+    gw = installed("bastiongateway")
+    if (has_detectors or has_gate_block) and gw and _key(gw)[:3] < _key(_V2_FLOORS["bastiongateway"]):
+        warnings.append(
+            f"bastiongateway {gw} ignores `detectors:` and the whole `gate:` block in this "
+            "policy_version 2 file: every gate knob silently falls back to its defaults. "
+            f"Needs >= {_V2_FLOORS['bastiongateway']}: pip install -U bastiongateway"
+        )
+    return warnings
+
+
+def run(as_json: bool = False, check_pypi: bool = True, policy: str | None = None) -> int:
     rows = collect(check_pypi=check_pypi)
+    policy_notes: list[str] = []
+    if policy is not None:
+        from pathlib import Path
+
+        try:
+            text = Path(policy).read_text(encoding="utf-8")
+        except OSError as e:
+            print(f"doctor: cannot read policy file {policy}: {e.strerror or e}")
+            return 2
+        policy_notes = policy_warnings(text, installed_version)
     if as_json:
-        print(json.dumps(rows, indent=2))
-        return 1 if any(r["outdated"] for r in rows) else 0
+        print(json.dumps({"packages": rows, "policy_warnings": policy_notes} if policy else rows, indent=2))
+        return 1 if any(r["outdated"] for r in rows) or policy_notes else 0
     report, n_outdated = render(rows)
     print(report)
-    return 1 if n_outdated else 0
+    if policy is not None:
+        print(f"\nPolicy {policy}:")
+        print("\n".join(f"  WARNING: {w}" for w in policy_notes) if policy_notes
+              else "  ok: installed consumers understand this policy file")
+    return 1 if n_outdated or policy_notes else 0

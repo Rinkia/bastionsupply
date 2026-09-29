@@ -49,3 +49,82 @@ def test_offline_latest_returns_none(monkeypatch):
 
 def test_version_key_orders():
     assert doctor._key("0.10.0") > doctor._key("0.9.9")
+
+
+# --- doctor --policy: a policy_version 2 file vs installed consumers ---------
+
+V2_YAML = """\
+policy_version: 2
+default: deny
+allow: [read_file]
+detectors:
+  bastion.exfil_action: off
+gate:
+  result_inspector: agentbastion
+"""
+V2_GATE_ONLY = "policy_version: 2\ngate:\n  on_injected_result: warn\n"
+V1_YAML = "default: deny\nallow: [read_file]\n"
+
+
+def _installed(**versions):
+    return lambda name: versions.get(name)
+
+
+def test_v2_kill_switch_on_old_agentbastion_warns():
+    warnings = doctor.policy_warnings(V2_YAML, _installed(agentbastion="0.11.0"))
+    assert len(warnings) == 1
+    assert "agentbastion 0.11.0" in warnings[0] and "detectors:" in warnings[0]
+    assert "pip install -U agentbastion" in warnings[0]
+
+
+def test_v2_on_old_gate_warns_about_detectors_and_gate_block():
+    warnings = doctor.policy_warnings(V2_YAML, _installed(bastiongateway="0.7.0"))
+    assert len(warnings) == 1
+    assert "bastiongateway 0.7.0" in warnings[0]
+    assert "gate:" in warnings[0] and "defaults" in warnings[0]
+
+
+def test_gate_block_alone_still_warns_on_old_gate_but_not_agentbastion():
+    warnings = doctor.policy_warnings(V2_GATE_ONLY, _installed(agentbastion="0.11.0", bastiongateway="0.7.0"))
+    assert len(warnings) == 1 and "bastiongateway" in warnings[0]
+
+
+def test_consumers_at_the_floor_are_fine():
+    assert doctor.policy_warnings(V2_YAML, _installed(agentbastion="0.12.0", bastiongateway="0.8.0")) == []
+    assert doctor.policy_warnings(V2_YAML, _installed(agentbastion="0.13.1", bastiongateway="1.0.0")) == []
+
+
+def test_prerelease_of_the_floor_counts():
+    assert doctor.policy_warnings(V2_YAML, _installed(agentbastion="0.12.0rc1")) == []
+
+
+def test_not_installed_consumers_are_not_warned_about():
+    assert doctor.policy_warnings(V2_YAML, _installed()) == []
+
+
+def test_v1_files_never_warn():
+    assert doctor.policy_warnings(V1_YAML, _installed(agentbastion="0.1.0", bastiongateway="0.1.0")) == []
+
+
+def test_json_v2_policy_is_detected():
+    text = '{"policy_version": 2, "detectors": {"bastion.exfil_action": "off"}}'
+    assert len(doctor.policy_warnings(text, _installed(agentbastion="0.11.0"))) == 1
+
+
+def test_indented_keys_are_not_mistaken_for_top_level():
+    text = "policy_version: 2\ngate:\n  tools:\n    detectors: {}\n"   # nested, not a top-level detectors:
+    assert doctor.policy_warnings(text, _installed(agentbastion="0.11.0")) == []
+
+
+def test_run_with_policy_reports_and_exits_1(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(doctor, "installed_version", _installed(agentbastion="0.11.0"))
+    path = tmp_path / "policy.yaml"
+    path.write_text(V2_YAML, encoding="utf-8")
+    code = doctor.run(check_pypi=False, policy=str(path))
+    out = capsys.readouterr().out
+    assert code == 1 and "agentbastion 0.11.0" in out
+
+
+def test_run_with_missing_policy_file(capsys, tmp_path):
+    assert doctor.run(check_pypi=False, policy=str(tmp_path / "nope.yaml")) == 2
+    assert "nope.yaml" in capsys.readouterr().out

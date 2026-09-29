@@ -63,6 +63,20 @@ in CI to fail a build that pulls in a poisoned server.
     sarif_file: bastionsupply.sarif
 ```
 
+### Is my Bastion suite current? (`doctor`)
+
+```bash
+bastionsupply doctor                       # installed vs latest on PyPI, + the pip line to catch up
+bastionsupply doctor --policy policy.yaml  # also: will the installed tools honor this policy file?
+```
+
+`--policy` checks a `policy_version: 2` file against what is installed.
+agentbastion < 0.12 silently ignores `detectors:` (a kill switch would not apply), and
+bastiongateway < 0.8 ignores `detectors:` **and** the whole `gate:` block (every gate
+knob falls back to its default). Old installs can't be fixed retroactively, so this
+is how you find out. Exit code 1 on anything outdated or a policy warning, 2 if the
+file can't be read; `--offline` skips PyPI.
+
 ## What it catches
 
 | check | severity | what it means |
