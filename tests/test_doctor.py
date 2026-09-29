@@ -128,3 +128,39 @@ def test_run_with_policy_reports_and_exits_1(monkeypatch, tmp_path, capsys):
 def test_run_with_missing_policy_file(capsys, tmp_path):
     assert doctor.run(check_pypi=False, policy=str(tmp_path / "nope.yaml")) == 2
     assert "nope.yaml" in capsys.readouterr().out
+
+
+# --- flow-guard knobs (bastiongateway >= 0.9) --------------------------------
+V1_FLOW = "default: allow\non_tainted_egress: block\n"
+V1_FLOW_PER_TOOL = "tools:\n  fetch:\n    labels: [untrusted, egress]\n"
+V2_FLOW = "policy_version: 2\ngate:\n  scan_flows: true\n  label_packs: false\n"
+
+
+def test_v1_flow_knob_on_old_gate_warns():
+    warnings = doctor.policy_warnings(V1_FLOW, _installed(bastiongateway="0.8.1"))
+    assert len(warnings) == 1 and "on_tainted_egress" in warnings[0] and "0.9.0" in warnings[0]
+
+
+def test_indented_per_tool_labels_on_old_gate_warns():
+    warnings = doctor.policy_warnings(V1_FLOW_PER_TOOL, _installed(bastiongateway="0.8.1"))
+    assert len(warnings) == 1 and "labels" in warnings[0]
+
+
+def test_v2_flow_knobs_on_08_gate_warn_once_for_flow():
+    warnings = doctor.policy_warnings(V2_FLOW, _installed(bastiongateway="0.8.1"))
+    assert len(warnings) == 1 and "scan_flows" in warnings[0] and "label_packs" in warnings[0]
+
+
+def test_flow_knobs_on_09_gate_are_fine():
+    assert doctor.policy_warnings(V1_FLOW, _installed(bastiongateway="0.9.0")) == []
+    assert doctor.policy_warnings(V2_FLOW, _installed(bastiongateway="0.9.0")) == []
+
+
+def test_json_flow_knob_nested_is_detected():
+    text = '{"tools": {"fetch": {"on_tainted_egress": "block"}}}'
+    assert len(doctor.policy_warnings(text, _installed(bastiongateway="0.8.0"))) == 1
+
+
+def test_flow_word_in_a_comment_or_value_does_not_warn():
+    text = "default: allow  # scan_flows later\nallow: [labels]\n"
+    assert doctor.policy_warnings(text, _installed(bastiongateway="0.8.0")) == []

@@ -183,11 +183,19 @@ def check_tool_shadowing(server: Server) -> list[Finding]:
     return out
 
 
+def capability_categories(tool: Tool) -> frozenset[str]:
+    """Sensitive-capability kinds a tool's name/description claims (exec, delete,
+    network, email-egress, secrets, privilege). Public so bastiongate can label
+    tools for its flow guard without parsing Finding messages."""
+    blob = f"{tool.name}\n{tool.description}"
+    return frozenset(cat for cat, rx in _SENSITIVE.items() if rx.search(blob))
+
+
 def check_sensitive_capability(server: Server) -> list[Finding]:
     out = []
     for t in server.tools:
         blob = f"{t.name}\n{t.description}"
-        cats = [cat for cat, rx in _SENSITIVE.items() if rx.search(blob)]
+        cats = capability_categories(t)
         if cats:
             sev = "high" if ({"exec", "delete", "secrets"} & set(cats)) else "medium"
             out.append(
