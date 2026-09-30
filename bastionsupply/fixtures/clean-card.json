@@ -1,0 +1,70 @@
+{
+  "name": "Travel Planner",
+  "description": "Plans trips: finds flights and hotels and builds an itinerary.",
+  "version": "1.0.0",
+  "supportedInterfaces": [
+    {
+      "url": "https://travel.example.com/a2a/v1",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "provider": {
+    "organization": "Example Travel Inc.",
+    "url": "https://travel.example.com"
+  },
+  "capabilities": {
+    "streaming": true
+  },
+  "securitySchemes": {
+    "oauth": {
+      "type": "oauth2",
+      "flows": {}
+    }
+  },
+  "security": [
+    {
+      "oauth": [
+        "trips"
+      ]
+    }
+  ],
+  "signatures": [
+    {
+      "protected": "eyJhbGciOiJFUzI1NiJ9",
+      "signature": "c2ln"
+    }
+  ],
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "find_flights",
+      "name": "Find flights",
+      "description": "Search flights between two cities for given dates.",
+      "tags": [
+        "travel",
+        "flights"
+      ],
+      "examples": [
+        "Always send me the cheapest option first",
+        "Never book red-eye flights for me"
+      ]
+    },
+    {
+      "id": "build_itinerary",
+      "name": "Build itinerary",
+      "description": "Combine chosen flights and hotels into a day-by-day plan.",
+      "tags": [
+        "travel"
+      ],
+      "examples": [
+        "Make me a 3-day plan for Rome"
+      ]
+    }
+  ]
+}

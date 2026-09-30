@@ -1,8 +1,10 @@
-"""Load MCP tool definitions from three sources:
+"""Load MCP tool definitions (and A2A agent cards) from these sources:
 
-1. a JSON file (offline)   -- a `tools/list` dump, or {"tools":[...]}, or a list
+1. a JSON file (offline)   -- a `tools/list` dump, or {"tools":[...]}, or a list,
+                              or an A2A agent card (auto-detected)
 2. a stdio MCP server      -- spawn it and speak JSON-RPC (stdlib only)
 3. an MCP client config    -- discover servers from mcp.json / Claude config
+4. a remote A2A agent      -- GET its agent card (well-known discovery)
 
 Live fetch (2, 3) executes the server process. That is opt-in at the CLI.
 """
@@ -18,8 +20,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import replace
 from pathlib import Path
 
+from . import a2a
 from .models import Server, Tool
 
 MAX_LINE = 5_000_000  # cap one JSON-RPC message (bytes) — bound memory vs a hostile server
@@ -69,7 +73,75 @@ def tools_from_obj(obj) -> tuple[Tool, ...]:
 def load_json_file(path: str | Path, name: str | None = None) -> Server:
     p = Path(path)
     obj = json.loads(p.read_text(encoding="utf-8"))
+    if a2a.is_agent_card(obj):
+        server = a2a.server_from_card(obj, source=str(p))
+        return replace(server, name=name) if name else server
     return Server(name=name or p.stem, tools=tools_from_obj(obj), source=str(p))
+
+
+# --------------------------------------------------------------------------- #
+# live: A2A agent card (GET, well-known discovery)
+# --------------------------------------------------------------------------- #
+_WELL_KNOWN = ("/.well-known/agent-card.json", "/.well-known/agent.json")  # current, legacy
+
+
+def _read_bounded(resp, where: str, timeout: float) -> bytes:
+    """Read a body under MAX_HTTP_BODY and ONE overall deadline (a per-read socket
+    timeout alone lets a server drip a byte every few seconds for hours)."""
+    deadline = time.monotonic() + timeout
+    chunks, size = [], 0
+    while True:
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"{where}: deadline of {timeout:g}s exceeded while reading the body")
+        chunk = resp.read(65536)
+        if not chunk:
+            return b"".join(chunks)
+        size += len(chunk)
+        if size > MAX_HTTP_BODY:
+            raise RuntimeError(f"agent card at {where} is larger than {MAX_HTTP_BODY} bytes")
+        chunks.append(chunk)
+
+
+def fetch_agent_card(url: str, name: str = "", timeout: float = 20.0) -> Server:
+    """Fetch and map a remote A2A agent card.
+
+    A bare origin (`https://agent.example`) tries `/.well-known/agent-card.json`
+    then the legacy `/.well-known/agent.json`; any other path is fetched as-is.
+    http/https only, redirects never followed (the error names the target so the
+    user can re-run with it), body capped at MAX_HTTP_BODY.
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+        parsed.port  # noqa: B018 - raises ValueError on a malformed port
+    except ValueError as e:
+        raise ValueError(f"not a valid URL: {url!r} ({e})") from e
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"url must be http/https, got {parsed.scheme!r}")
+    if parsed.path in ("", "/"):
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        candidates = [origin + p for p in _WELL_KNOWN]
+    else:
+        candidates = [url]
+    for i, candidate in enumerate(candidates):
+        req = urllib.request.Request(candidate, headers={"Accept": "application/json"})
+        try:
+            resp = _OPENER.open(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            if 300 <= e.code < 400:
+                raise RuntimeError(
+                    f"{candidate} redirects to {e.headers.get('Location')!r}; redirects are not "
+                    "followed, re-run with that URL if you trust it") from e
+            if 400 <= e.code < 500 and i + 1 < len(candidates):
+                continue  # well-known discovery: try the legacy path
+            tried = " and ".join(candidates) if len(candidates) > 1 else candidate
+            raise RuntimeError(f"no agent card: HTTP {e.code} from {tried}") from e
+        data = _read_bounded(resp, candidate, timeout)
+        obj = json.loads(data)
+        if not a2a.is_agent_card(obj):
+            raise ValueError(f"{candidate} is not an A2A agent card (no skills list)")
+        server = a2a.server_from_card(obj, source=candidate)
+        return replace(server, name=name) if name else server
+    raise RuntimeError(f"no agent card at {url}")  # unreachable: loop returns or raises
 
 
 # --------------------------------------------------------------------------- #

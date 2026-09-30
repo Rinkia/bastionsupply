@@ -132,33 +132,39 @@ def check_tool_poisoning(server: Server) -> list[Finding]:
     Two signal sources: regex heuristics, and known attack strings from the
     shared bastioncorpus dataset.
     """
-    sigs = poison_signatures()
     out = []
     for t in server.tools:
-        finding = None
         for field_name, text in (("description", t.description), ("parameter", t.param_text)):
             where = "Tool description" if field_name == "description" else "Tool parameter"
-            hit = next((m for rx in _POISON if (m := rx.search(text))), None)
-            if hit:
-                finding = Finding(
-                    check="tool-poisoning", severity="critical", tool=t.name,
-                    message=f"{where} contains an instruction aimed at the model, not a description of the tool.",
-                    evidence=_snippet(text, hit.start(), hit.end()),
-                )
+            finding = _poison_finding(text, where, t.name)
+            if finding:
+                out.append(finding)
                 break
-            low = text.lower()
-            corpus_hit = next((phrase for _cat, phrase in sigs if phrase in low), None)
-            if corpus_hit:
-                idx = low.find(corpus_hit)
-                finding = Finding(
-                    check="tool-poisoning", severity="critical", tool=t.name,
-                    message=f"{where} contains a known prompt-injection payload (bastioncorpus).",
-                    evidence=_snippet(text, idx, idx + len(corpus_hit)),
-                )
-                break
+    if server.description:  # an A2A card's own description (empty for MCP servers)
+        finding = _poison_finding(server.description, "Agent description", "")
         if finding:
             out.append(finding)
     return out
+
+
+def _poison_finding(text: str, where: str, tool: str) -> Finding | None:
+    hit = next((m for rx in _POISON if (m := rx.search(text))), None)
+    if hit:
+        return Finding(
+            check="tool-poisoning", severity="critical", tool=tool,
+            message=f"{where} contains an instruction aimed at the model, not a description of the tool.",
+            evidence=_snippet(text, hit.start(), hit.end()),
+        )
+    low = text.lower()
+    corpus_hit = next((phrase for _cat, phrase in poison_signatures() if phrase in low), None)
+    if corpus_hit:
+        idx = low.find(corpus_hit)
+        return Finding(
+            check="tool-poisoning", severity="critical", tool=tool,
+            message=f"{where} contains a known prompt-injection payload (bastioncorpus).",
+            evidence=_snippet(text, idx, idx + len(corpus_hit)),
+        )
+    return None
 
 
 def check_tool_shadowing(server: Server) -> list[Finding]:
@@ -269,6 +275,14 @@ def check_hidden_unicode(server: Server) -> list[Finding]:
                         evidence=f"{len(hits)} char(s): {pts}",
                     )
                 )
+    hits = _hidden_codepoints(server.description)
+    if hits:
+        kinds = sorted({k for k, _ in hits})
+        out.append(Finding(
+            check="hidden-unicode", severity="critical", tool="",
+            message=f"Agent description contains hidden/control unicode ({', '.join(kinds)}).",
+            evidence=f"{len(hits)} char(s): {', '.join(cp for _, cp in hits[:8])}",
+        ))
     return out
 
 
@@ -348,6 +362,10 @@ def run_checks(server: Server) -> list[Finding]:
     findings: list[Finding] = []
     for check in ALL_CHECKS:
         findings.extend(check(server))
+    if server.kind == "a2a":
+        from . import a2a
+
+        findings = a2a.cap(findings + a2a.check_card(server))
     return sorted(findings, key=lambda f: (_RANK[f.severity], f.check, f.tool))
 
 

@@ -1,6 +1,7 @@
 """Immutable data model for MCP supply-chain scanning.
 
-A `Server` holds the tool definitions returned by an MCP server's `tools/list`.
+A `Server` holds the tool definitions returned by an MCP server's `tools/list`
+(or, with `kind="a2a"`, the skills of an A2A agent card).
 Checks read a `Server` and emit `Finding`s; a `ScanReport` collects them.
 """
 
@@ -46,6 +47,9 @@ class Server:
     name: str
     tools: tuple[Tool, ...] = ()
     source: str = ""  # command line, url, or file path it came from
+    kind: str = "mcp"  # mcp | a2a
+    description: str = ""  # server/agent-level text (an A2A card's description)
+    card: dict = field(default_factory=dict, compare=False)  # raw A2A agent card (kind == "a2a")
 
 
 @dataclass(frozen=True)
@@ -70,6 +74,7 @@ class ScanReport:
     server: str
     tool_count: int
     findings: tuple[Finding, ...] = ()
+    kind: str = "mcp"
 
     @property
     def risk(self) -> str:
