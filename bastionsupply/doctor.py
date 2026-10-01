@@ -148,10 +148,22 @@ def _flow_keys(text: str) -> list[str]:
     return sorted(k for k in _FLOW_KEYS if re.search(rf"^\s*{k}\s*:", text, re.M))
 
 
+# Encoded-result knob (bastiongateway 0.10): same silent-drop risk in a v1 file.
+_ENCODED_FLOOR = "0.10.0"
+_ENCODED_KEYS = ("on_encoded_result",)
+
+
 def policy_warnings(text: str, installed=installed_version) -> list[str]:
     """Warnings for installed consumers too old for this policy file."""
     warnings = []
     gw = installed("bastiongateway")
+    encoded = [k for k in _ENCODED_KEYS if k in text]
+    if encoded and gw and _key(gw)[:3] < _key(_ENCODED_FLOOR):
+        warnings.append(
+            f"bastiongateway {gw} ignores {', '.join(encoded)} in this policy: encoded "
+            f"injections in tool results will NOT be blocked. Needs >= {_ENCODED_FLOOR}: "
+            "pip install -U bastiongateway"
+        )
     flow = _flow_keys(text)
     if flow and gw and _key(gw)[:3] < _key(_FLOW_FLOOR):
         warnings.append(

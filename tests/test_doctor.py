@@ -164,3 +164,13 @@ def test_json_flow_knob_nested_is_detected():
 def test_flow_word_in_a_comment_or_value_does_not_warn():
     text = "default: allow  # scan_flows later\nallow: [labels]\n"
     assert doctor.policy_warnings(text, _installed(bastiongateway="0.8.0")) == []
+
+
+def test_encoded_result_key_needs_gate_0_10():
+    from bastionsupply.doctor import policy_warnings
+
+    text = "default: allow\non_encoded_result: block\n"
+    old = policy_warnings(text, installed=lambda name: "0.9.0" if name == "bastiongateway" else None)
+    assert any("on_encoded_result" in w and "0.10.0" in w for w in old)
+    new = policy_warnings(text, installed=lambda name: "0.10.0" if name == "bastiongateway" else None)
+    assert not any("on_encoded_result" in w for w in new)
