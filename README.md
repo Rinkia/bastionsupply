@@ -162,6 +162,7 @@ file can't be read; `--offline` skips PyPI.
 | check | severity | what it means |
 |-------|----------|---------------|
 | `tool-poisoning` | critical | instructions aimed at the model — in the tool **description or a parameter**; matches regex heuristics **and** known bastioncorpus attack strings |
+| `encoded-injection` | high | the same instructions, hidden in an encoding the model reads but a filter does not: base64, base32, hex, binary, ascii85/base85, Morse, percent or `\u` escapes. Decoded with bastioncorpus's `variants`; also checks every A2A card field (capped at medium there). Tag characters stay with `hidden-unicode` |
 | `semantic-poisoning` | high | tool text is embedding-similar to a known injection intent (optional; needs an embedder) |
 | `hidden-unicode` | critical | format / control / private-use chars (zero-width, bidi, tag) hiding in a name, description, **or parameter** |
 | `homoglyph-name` | critical/high | a tool (or parameter) name using look-alike chars — **critical** when it folds to the same skeleton as a sibling tool (active impersonation), **high** for a mixed-script name |

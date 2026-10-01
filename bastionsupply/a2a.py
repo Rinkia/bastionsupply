@@ -198,7 +198,7 @@ def check_card(server: Server) -> list[Finding]:
     """Card-level checks. Runs only for kind == "a2a"."""
     if server.kind != "a2a":
         return []
-    from .checks import _hidden_codepoints, _poison_finding, _scripts_in  # no import cycle
+    from .checks import _encoded_finding, _hidden_codepoints, _poison_finding, _scripts_in  # no import cycle
 
     card = server.card
     out: list[Finding] = []
@@ -258,6 +258,10 @@ def check_card(server: Server) -> list[Finding]:
         finding = _poison_finding(text, f"Card field `{where}`", "")
         if finding:
             out.append(finding)
+        else:
+            finding = _encoded_finding(text, f"Card field `{where}`", "")
+            if finding:
+                out.append(finding)
         hits = _hidden_codepoints(text)
         if hits:
             out.append(Finding("hidden-unicode", "critical", "",

@@ -167,6 +167,49 @@ def _poison_finding(text: str, where: str, tool: str) -> Finding | None:
     return None
 
 
+def _decoded_views(text: str):
+    """Decoded views of encoded runs in `text` (bastioncorpus.variants, run-based only:
+    whole-text rot13/leet rewrites stay in the user-input guard). Tag characters are
+    skipped: `hidden-unicode` already reports them at critical."""
+    try:
+        from bastioncorpus import variants
+    except ImportError:  # bastioncorpus < 0.5: no decoder, no encoded findings
+        return []
+    return [d for d in variants(text) if "tags" not in d.encoding.split(">")]
+
+
+def _encoded_finding(text: str, where: str, tool: str) -> Finding | None:
+    """An instruction aimed at the model, hidden in an encoding (base64, hex, binary...)."""
+    if not text:
+        return None
+    for d in _decoded_views(text):
+        hidden = _poison_finding(d.text, where, tool)
+        if hidden:
+            return Finding(
+                check="encoded-injection", severity="high", tool=tool,
+                message=f"{where} hides an instruction aimed at the model in {d.encoding} encoding.",
+                evidence=f"decoded: {hidden.evidence}",
+            )
+    return None
+
+
+def check_encoded_injection(server: Server) -> list[Finding]:
+    """Tool-poisoning hidden in an encoding. A new check name (not tool-poisoning) so
+    consumers that enforce on tool-poisoning (bastiongate) adopt it deliberately."""
+    out = []
+    for t in server.tools:
+        for field_name, text in (("description", t.description), ("parameter", t.param_text)):
+            where = "Tool description" if field_name == "description" else "Tool parameter"
+            finding = _encoded_finding(text, where, t.name)
+            if finding:
+                out.append(finding)
+                break
+    finding = _encoded_finding(server.description, "Agent description", "")
+    if finding:
+        out.append(finding)
+    return out
+
+
 def check_tool_shadowing(server: Server) -> list[Finding]:
     """Description of tool A that references or instructs tool B."""
     names = {t.name.lower() for t in server.tools}
@@ -346,6 +389,7 @@ def check_homoglyph_name(server: Server) -> list[Finding]:
 
 ALL_CHECKS = (
     check_tool_poisoning,
+    check_encoded_injection,
     check_semantic_poisoning,
     check_hidden_unicode,
     check_homoglyph_name,
