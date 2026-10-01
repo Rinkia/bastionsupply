@@ -167,7 +167,7 @@ def _poison_finding(text: str, where: str, tool: str) -> Finding | None:
     return None
 
 
-def _decoded_views(text: str):
+def decoded_views(text: str):
     """Decoded views of encoded runs in `text` (bastioncorpus.variants, run-based only:
     whole-text rot13/leet rewrites stay in the user-input guard). Tag characters are
     skipped: `hidden-unicode` already reports them at critical."""
@@ -178,11 +178,13 @@ def _decoded_views(text: str):
     return [d for d in variants(text) if "tags" not in d.encoding.split(">")]
 
 
-def _encoded_finding(text: str, where: str, tool: str) -> Finding | None:
-    """An instruction aimed at the model, hidden in an encoding (base64, hex, binary...)."""
+def encoded_injection(text: str, where: str, tool: str = "", views=None) -> Finding | None:
+    """An instruction aimed at the model, hidden in an encoding (base64, hex, binary...).
+    Pass `views` (from `decoded_views(text)`) when the caller already decoded `text`:
+    decoding is the expensive part, do it once per text."""
     if not text:
         return None
-    for d in _decoded_views(text):
+    for d in (decoded_views(text) if views is None else views):
         hidden = _poison_finding(d.text, where, tool)
         if hidden:
             return Finding(
@@ -191,6 +193,10 @@ def _encoded_finding(text: str, where: str, tool: str) -> Finding | None:
                 evidence=f"decoded: {hidden.evidence}",
             )
     return None
+
+
+_decoded_views = decoded_views  # pre-0.11 private names, kept for internal callers
+_encoded_finding = encoded_injection
 
 
 def check_encoded_injection(server: Server) -> list[Finding]:
