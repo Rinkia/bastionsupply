@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.11.0 (unreleased)
+
+- **`encoded-injection` check (high).** Tool-poisoning hidden in an encoding: base64,
+  base64url, base32, hex, binary, ascii85/base85, Morse, percent and `\u` escapes, including
+  line-wrapped and chained forms.
+  - Decoded with `bastioncorpus.variants` (run-based only; whole-text rot13/leet rewrites stay
+    in the input guard), then matched with the same regexes and corpus phrases as
+    `tool-poisoning`.
+  - Covers tool descriptions, parameters, the agent description and every A2A card field
+    (capped at medium for cards, like all A2A findings).
+- `decoded_views(text, transforms=True)` adds the whole-text rot13 / leet / reversed /
+  spaced-letter views (opt-in; the scan itself stays run-based). bastiongate and bastionmesh
+  use it behind their `decode_transforms` setting. Evidence: `bastionprobe encoding-bench --defenders supply,supply+transforms` (2026-10-02): rot13 1% -> 88%, leet 1% -> 76%, reversed 1% -> 88%, spaced letters 1% -> 8%, 0% benign FP; and 0 false positives on 45,025 real Markdown paragraphs (skills and memory notes).
+- `doctor --policy` also flags the new gate keys `decode_transforms` and `scan_resources` on a
+  bastiongateway older than 0.10.
+  - Tag characters are not re-reported: `hidden-unicode` already flags them at critical.
+- **A new check name, so nothing changes for consumers until they opt in.** bastiongate
+  enforces on `tool-poisoning` / `hidden-unicode` / `homoglyph-name` only, and adopts this
+  check in its next release. Clean servers produce identical output.
+- Requires bastioncorpus >= 0.5.0. bastionmesh 0.1.x pins bastionsupply < 0.11; mesh 0.2
+  widens the pin.
+
 ## 0.10.0
 
 - **A2A agent card scanning.** A card is the host agent's view of a remote agent,
