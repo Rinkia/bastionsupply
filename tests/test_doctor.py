@@ -183,6 +183,8 @@ def test_encoded_key_floor_is_structural():
     assert not policy_warnings("# we might set on_encoded_result later\ndefault: allow\n", installed=old)
     assert not policy_warnings("tools:\n  scan_on_encoded_result_tool: {labels: [egress]}\n", installed=old)
     assert any("on_encoded_result" in w for w in policy_warnings('{"on_encoded_result": "block"}', installed=old))
+    assert any("decode_transforms" in w for w in policy_warnings("decode_transforms: true\n", installed=old))
+    assert any("scan_resources" in w for w in policy_warnings('{"gate": {"scan_resources": false}}', installed=old))
     nested = "policy_version: 2\ngate:\n  on_encoded_result: block\n"
     assert any("refuses to load" in w for w in policy_warnings(nested, installed=old))
 

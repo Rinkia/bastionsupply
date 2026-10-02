@@ -167,15 +167,16 @@ def _poison_finding(text: str, where: str, tool: str) -> Finding | None:
     return None
 
 
-def decoded_views(text: str):
-    """Decoded views of encoded runs in `text` (bastioncorpus.variants, run-based only:
-    whole-text rot13/leet rewrites stay in the user-input guard). Tag characters are
+def decoded_views(text: str, *, transforms: bool = False):
+    """Decoded views of encoded runs in `text` (bastioncorpus.variants). Run-based only
+    by default; `transforms=True` adds the whole-text rot13 / leet / reversed /
+    spaced-letter rewrites (opt-in: more scan work per text). Tag characters are
     skipped: `hidden-unicode` already reports them at critical."""
     try:
         from bastioncorpus import variants
     except ImportError:  # bastioncorpus < 0.5: no decoder, no encoded findings
         return []
-    return [d for d in variants(text) if "tags" not in d.encoding.split(">")]
+    return [d for d in variants(text, transforms=transforms) if "tags" not in d.encoding.split(">")]
 
 
 def encoded_injection(text: str, where: str, tool: str = "", views=None) -> Finding | None:

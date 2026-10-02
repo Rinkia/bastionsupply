@@ -148,10 +148,10 @@ def _flow_keys(text: str) -> list[str]:
     return sorted(k for k in _FLOW_KEYS if re.search(rf"^\s*{k}\s*:", text, re.M))
 
 
-# Encoded-result knob (bastiongateway 0.10): an older gate drops it silently from a v1
-# file and refuses a v2 file that sets it (unknown key).
+# Knobs added in bastiongateway 0.10: an older gate drops them silently from a v1 file
+# and refuses a v2 file that sets them (unknown key).
 _ENCODED_FLOOR = "0.10.0"
-_ENCODED_KEYS = ("on_encoded_result",)
+_ENCODED_KEYS = ("on_encoded_result", "decode_transforms", "scan_resources")
 # Detector added in agentbastion 0.14: an older agentbastion refuses a v2 file naming it.
 _DETECTOR_FLOORS = {"bastion.decoded_payload": "0.14.0"}
 
@@ -185,9 +185,10 @@ def policy_warnings(text: str, installed=installed_version) -> list[str]:
     encoded = _keys_present(text, _ENCODED_KEYS)
     if encoded and gw and _key(gw)[:3] < _key(_ENCODED_FLOOR):
         warnings.append(
-            f"bastiongateway {gw} does not know {', '.join(encoded)}: it ignores it in a v1 policy "
-            "(encoded injections in tool results will NOT be blocked) and refuses to load a "
-            f"policy_version 2 file. Needs >= {_ENCODED_FLOOR}: pip install -U bastiongateway"
+            f"bastiongateway {gw} does not know {', '.join(encoded)}: it ignores them in a v1 policy "
+            "(encoded injections in tool results and injections in resource content will NOT be "
+            f"blocked) and refuses to load a policy_version 2 file. Needs >= {_ENCODED_FLOOR}: "
+            "pip install -U bastiongateway"
         )
     ab_now = installed("agentbastion")
     for det_id in _keys_present(text, tuple(_DETECTOR_FLOORS)):
