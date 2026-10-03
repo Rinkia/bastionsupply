@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.1 (unreleased)
+
+- `doctor --policy` knows the bastiongateway 0.11/0.12 keys: `scan_prompts` (needs 0.11.0) and
+  `taint_group` (needs 0.12.0). An older gate ignores them in v1 (no effect) and refuses a v2
+  file.
+
 ## 0.11.0 (unreleased)
 
 - **`encoded-injection` check (high).** Tool-poisoning hidden in an encoding: base64,

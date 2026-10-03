@@ -176,6 +176,19 @@ def test_encoded_result_key_needs_gate_0_10():
     assert not any("on_encoded_result" in w for w in new)
 
 
+def test_later_gate_key_floors():
+    from bastionsupply.doctor import policy_warnings
+
+    at = lambda v: (lambda name: v if name == "bastiongateway" else None)  # noqa: E731
+    text = "taint_group: auto\nscan_prompts: false\n"
+    w = policy_warnings(text, installed=at("0.10.0"))
+    assert any("scan_prompts" in x and "0.11.0" in x for x in w) and any("taint_group" in x and "0.12.0" in x for x in w)
+    w = policy_warnings(text, installed=at("0.11.0"))
+    assert not any("scan_prompts" in x for x in w) and any("taint_group" in x for x in w)
+    assert not policy_warnings(text, installed=at("0.12.0"))
+    assert not policy_warnings('{"gate": {"taint_group": "a"}}', installed=at("0.12.1"))
+
+
 def test_encoded_key_floor_is_structural():
     from bastionsupply.doctor import policy_warnings
 

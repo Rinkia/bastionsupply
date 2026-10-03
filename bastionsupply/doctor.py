@@ -152,6 +152,8 @@ def _flow_keys(text: str) -> list[str]:
 # and refuses a v2 file that sets them (unknown key).
 _ENCODED_FLOOR = "0.10.0"
 _ENCODED_KEYS = ("on_encoded_result", "decode_transforms", "scan_resources")
+# later gate keys, each with the first bastiongateway that knows it
+_GATE_KEY_FLOORS = {"scan_prompts": "0.11.0", "taint_group": "0.12.0"}
 # Detector added in agentbastion 0.14: an older agentbastion refuses a v2 file naming it.
 _DETECTOR_FLOORS = {"bastion.decoded_payload": "0.14.0"}
 
@@ -190,6 +192,14 @@ def policy_warnings(text: str, installed=installed_version) -> list[str]:
             f"blocked) and refuses to load a policy_version 2 file. Needs >= {_ENCODED_FLOOR}: "
             "pip install -U bastiongateway"
         )
+    for key in _keys_present(text, tuple(_GATE_KEY_FLOORS)):
+        floor = _GATE_KEY_FLOORS[key]
+        if gw and _key(gw)[:3] < _key(floor):
+            warnings.append(
+                f"bastiongateway {gw} does not know {key}: it ignores it in a v1 policy (the setting "
+                f"has NO effect) and refuses to load a policy_version 2 file. Needs >= {floor}: "
+                "pip install -U bastiongateway"
+            )
     ab_now = installed("agentbastion")
     for det_id in _keys_present(text, tuple(_DETECTOR_FLOORS)):
         floor = _DETECTOR_FLOORS[det_id]
