@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.1 (2026-10-05)
+
+- `doctor --policy` knows the newest bastiongateway keys `scan_prompts` and `taint_group`. All
+  gate floors now say 0.13.0: gateway 0.10-0.12 were never published (they shipped inside
+  0.13.0), so 0.11.0's "needs >= 0.10.0" pointed at a version that does not exist. An older
+  gate ignores these keys in v1 (no effect) and refuses a v2 file.
+
 ## 0.11.0 (2026-10-05)
 
 - **`encoded-injection` check (high).** Tool-poisoning hidden in an encoding: base64,
