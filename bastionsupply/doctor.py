@@ -150,10 +150,10 @@ def _flow_keys(text: str) -> list[str]:
 
 # Knobs added in bastiongateway 0.10: an older gate drops them silently from a v1 file
 # and refuses a v2 file that sets them (unknown key).
-_ENCODED_FLOOR = "0.10.0"
+_ENCODED_FLOOR = "0.13.0"  # gateway 0.10-0.12 were never published: 0.13.0 is the first
 _ENCODED_KEYS = ("on_encoded_result", "decode_transforms", "scan_resources")
 # later gate keys, each with the first bastiongateway that knows it
-_GATE_KEY_FLOORS = {"scan_prompts": "0.11.0", "taint_group": "0.12.0"}
+_GATE_KEY_FLOORS = {"scan_prompts": "0.13.0", "taint_group": "0.13.0"}
 # Detector added in agentbastion 0.14: an older agentbastion refuses a v2 file naming it.
 _DETECTOR_FLOORS = {"bastion.decoded_payload": "0.14.0"}
 
