@@ -167,6 +167,56 @@ def _poison_finding(text: str, where: str, tool: str) -> Finding | None:
     return None
 
 
+def decoded_views(text: str, *, transforms: bool = False):
+    """Decoded views of encoded runs in `text` (bastioncorpus.variants). Run-based only
+    by default; `transforms=True` adds the whole-text rot13 / leet / reversed /
+    spaced-letter rewrites (opt-in: more scan work per text). Tag characters are
+    skipped: `hidden-unicode` already reports them at critical."""
+    try:
+        from bastioncorpus import variants
+    except ImportError:  # bastioncorpus < 0.5: no decoder, no encoded findings
+        return []
+    return [d for d in variants(text, transforms=transforms) if "tags" not in d.encoding.split(">")]
+
+
+def encoded_injection(text: str, where: str, tool: str = "", views=None) -> Finding | None:
+    """An instruction aimed at the model, hidden in an encoding (base64, hex, binary...).
+    Pass `views` (from `decoded_views(text)`) when the caller already decoded `text`:
+    decoding is the expensive part, do it once per text."""
+    if not text:
+        return None
+    for d in (decoded_views(text) if views is None else views):
+        hidden = _poison_finding(d.text, where, tool)
+        if hidden:
+            return Finding(
+                check="encoded-injection", severity="high", tool=tool,
+                message=f"{where} hides an instruction aimed at the model in {d.encoding} encoding.",
+                evidence=f"decoded: {hidden.evidence}",
+            )
+    return None
+
+
+_decoded_views = decoded_views  # pre-0.11 private names, kept for internal callers
+_encoded_finding = encoded_injection
+
+
+def check_encoded_injection(server: Server) -> list[Finding]:
+    """Tool-poisoning hidden in an encoding. A new check name (not tool-poisoning) so
+    consumers that enforce on tool-poisoning (bastiongate) adopt it deliberately."""
+    out = []
+    for t in server.tools:
+        for field_name, text in (("description", t.description), ("parameter", t.param_text)):
+            where = "Tool description" if field_name == "description" else "Tool parameter"
+            finding = _encoded_finding(text, where, t.name)
+            if finding:
+                out.append(finding)
+                break
+    finding = _encoded_finding(server.description, "Agent description", "")
+    if finding:
+        out.append(finding)
+    return out
+
+
 def check_tool_shadowing(server: Server) -> list[Finding]:
     """Description of tool A that references or instructs tool B."""
     names = {t.name.lower() for t in server.tools}
@@ -346,6 +396,7 @@ def check_homoglyph_name(server: Server) -> list[Finding]:
 
 ALL_CHECKS = (
     check_tool_poisoning,
+    check_encoded_injection,
     check_semantic_poisoning,
     check_hidden_unicode,
     check_homoglyph_name,

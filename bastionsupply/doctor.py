@@ -148,10 +148,56 @@ def _flow_keys(text: str) -> list[str]:
     return sorted(k for k in _FLOW_KEYS if re.search(rf"^\s*{k}\s*:", text, re.M))
 
 
+# Knobs added in bastiongateway 0.10: an older gate drops them silently from a v1 file
+# and refuses a v2 file that sets them (unknown key).
+_ENCODED_FLOOR = "0.10.0"
+_ENCODED_KEYS = ("on_encoded_result", "decode_transforms", "scan_resources")
+# Detector added in agentbastion 0.14: an older agentbastion refuses a v2 file naming it.
+_DETECTOR_FLOORS = {"bastion.decoded_payload": "0.14.0"}
+
+
+def _keys_present(text: str, keys) -> list[str]:
+    """Which of `keys` appear as KEYS (any nesting depth), not in comments or values."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if isinstance(data, (dict, list)):
+        found: set[str] = set()
+        stack = [data]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                found.update(k for k in node if k in keys)
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+        return sorted(found)
+    import re
+
+    return sorted(k for k in keys if re.search(rf"^[ \t-]*['\"]?{re.escape(k)}['\"]?\s*:", text, re.M))
+
+
 def policy_warnings(text: str, installed=installed_version) -> list[str]:
     """Warnings for installed consumers too old for this policy file."""
     warnings = []
     gw = installed("bastiongateway")
+    encoded = _keys_present(text, _ENCODED_KEYS)
+    if encoded and gw and _key(gw)[:3] < _key(_ENCODED_FLOOR):
+        warnings.append(
+            f"bastiongateway {gw} does not know {', '.join(encoded)}: it ignores them in a v1 policy "
+            "(encoded injections in tool results and injections in resource content will NOT be "
+            f"blocked) and refuses to load a policy_version 2 file. Needs >= {_ENCODED_FLOOR}: "
+            "pip install -U bastiongateway"
+        )
+    ab_now = installed("agentbastion")
+    for det_id in _keys_present(text, tuple(_DETECTOR_FLOORS)):
+        floor = _DETECTOR_FLOORS[det_id]
+        if ab_now and _key(ab_now)[:3] < _key(floor):
+            warnings.append(
+                f"agentbastion {ab_now} does not know detector {det_id} and refuses to load this "
+                f"policy (unknown detector). Needs >= {floor}: pip install -U agentbastion"
+            )
     flow = _flow_keys(text)
     if flow and gw and _key(gw)[:3] < _key(_FLOW_FLOOR):
         warnings.append(
