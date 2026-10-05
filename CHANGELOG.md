@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.11.0 (unreleased)
+## 0.11.0 (2026-10-05)
 
 - **`encoded-injection` check (high).** Tool-poisoning hidden in an encoding: base64,
   base64url, base32, hex, binary, ascii85/base85, Morse, percent and `\u` escapes, including
